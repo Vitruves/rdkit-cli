@@ -1,0 +1,26 @@
+{
+    "configurations": [
+        {
+            "name": "Mac",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/Library/Developer/CommandLineTools/usr/include/**",
+                "/Library/Developer/CommandLineTools/usr/lib/clang/17/include/**",
+                "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/**",
+                "/opt/homebrew/include/**",
+                "/opt/homebrew/Cellar/libomp/20.1.2/include/**",
+                "/opt/homebrew/Cellar/boost/1.87.0_1/include/**",
+                "/usr/X11/include/**",
+                "/usr/local/include/**",
+                "/Library/Developer/CommandLineTools/SDKs/**"
+            ],
+            "defines": [],
+            "macFrameworkPath": [
+                "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.2.sdk/System/Library/Frameworks"
+            ],
+            "cStandard": "c17",
+            "cppStandard": "c++17"
+        }
+    ],
+    "version": 4
+}
