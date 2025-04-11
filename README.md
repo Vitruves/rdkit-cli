@@ -81,4 +81,4 @@ rdkit-cli --file hits.sdf --export-svg ./images 300 300
 
 ## License
 
-MIT License
+MIT License# rdkit-cli
