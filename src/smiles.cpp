@@ -204,48 +204,42 @@ void SmilesHandler::canonicalize(MoleculeDataset& dataset) {
 void SmilesHandler::deduplicate(MoleculeDataset& dataset) {
   // Set temporary progress bar
   std::string operationName = "Deduplicating molecules";
-  ProgressTracker progress(operationName,
-                           dataset.size() * 2);  // Account for two passes
-
-  // Process in chunks to reduce memory usage
-  const size_t chunkSize = 10000;
 
   // First pass: canonicalize all SMILES and count occurrences
   std::unordered_map<std::string, size_t> firstOccurrence;
   std::vector<std::string> canonSmiles(dataset.size());
   std::vector<bool> keepMolecule(dataset.size(), false);
 
-  // Process in chunks
-  for (size_t startIdx = 0; startIdx < dataset.size(); startIdx += chunkSize) {
-    size_t endIdx = std::min(startIdx + chunkSize, dataset.size());
-
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
-    for (size_t i = startIdx; i < endIdx; i++) {
-      if (dataset[i].mol) {
-        try {
-          std::string smiles = RDKit::MolToSmiles(*dataset[i].mol);
-          canonSmiles[i] = smiles;
-        } catch (...) {
-          canonSmiles[i] = "";  // Skip molecules that fail
+  // First pass with progress monitoring
+  parallelProcessWithProgress(
+      operationName + " - Pass 1: Canonicalizing", 
+      dataset.size(), 
+      omp_get_max_threads(), 
+      false,
+      [&](size_t i) {
+        if (dataset[i].mol) {
+          try {
+            std::string smiles = RDKit::MolToSmiles(*dataset[i].mol);
+            canonSmiles[i] = smiles;
+          } catch (...) {
+            canonSmiles[i] = "";  // Skip molecules that fail
+          }
         }
       }
+  );
 
-#pragma omp critical
-      progress.update();
-    }
-
-    // Identify duplicates for this chunk
-    for (size_t i = startIdx; i < endIdx; i++) {
-      if (!canonSmiles[i].empty()) {
-        auto it = firstOccurrence.find(canonSmiles[i]);
-        if (it == firstOccurrence.end()) {
-          firstOccurrence[canonSmiles[i]] = i;
-          keepMolecule[i] = true;
-        }
+  // Process in chunks to identify duplicates
+  ProgressTracker progress(operationName + " - Pass 2: Identifying duplicates", dataset.size());
+  
+  for (size_t i = 0; i < dataset.size(); i++) {
+    if (!canonSmiles[i].empty()) {
+      auto it = firstOccurrence.find(canonSmiles[i]);
+      if (it == firstOccurrence.end()) {
+        firstOccurrence[canonSmiles[i]] = i;
+        keepMolecule[i] = true;
       }
     }
+    progress.update();
   }
 
   // Calculate how many molecules we're keeping
@@ -264,17 +258,18 @@ void SmilesHandler::deduplicate(MoleculeDataset& dataset) {
   uniqueDataset.reserve(uniqueCount);
 
   // Second pass: copy kept molecules to the new dataset
+  ProgressTracker finalProgress(operationName + " - Pass 3: Creating unique dataset", dataset.size());
   for (size_t i = 0; i < dataset.size(); i++) {
     if (keepMolecule[i]) {
       uniqueDataset.push_back(std::move(dataset[i]));
     }
-    progress.update();
+    finalProgress.update();
   }
 
   // Swap the datasets
   dataset.swap(uniqueDataset);
 
-  progress.finish();
+  finalProgress.finish();
 }
 
 void SmilesHandler::generateSynonyms(MoleculeDataset& dataset, int count,
@@ -285,285 +280,368 @@ void SmilesHandler::generateSynonyms(MoleculeDataset& dataset, int count,
     return;
   }
 
-  std::vector<MoleculeRecord> newRecords;
-
-  for (const auto& record : dataset) {
-    newRecords.push_back(record);
-
-    for (int i = 0; i < count; i++) {
-      MoleculeRecord newRecord = record;
-      std::string newSmiles = RDKit::MolToSmiles(*record.mol, true, false, -1,
-                                                 false, false, false, false);
-      newRecord.properties["SMILES"] = newSmiles;
-      newRecords.push_back(newRecord);
+  std::string operationName = "Generating random SMILES synonyms";
+  
+  // First, identify valid molecules and determine total output size
+  std::vector<bool> validMolecule(dataset.size(), false);
+  size_t totalOutputSize = 0;
+  
+  parallelProcessWithProgress(
+      operationName + " (identifying valid molecules)", dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        validMolecule[i] = dataset[i].mol && dataset[i].mol->getNumAtoms() > 0;
+        
+        #pragma omp atomic
+        totalOutputSize += validMolecule[i] ? (count + 1) : 0;
+      });
+  
+  // Create output dataset with correct size
+  MoleculeDataset newDataset;
+  newDataset.reserve(totalOutputSize);
+  
+  // First, add all original molecules
+  for (size_t i = 0; i < dataset.size(); i++) {
+    if (validMolecule[i]) {
+      newDataset.push_back(dataset[i]);
     }
   }
-
-  dataset = std::move(newRecords);
+  
+  // Then generate synonyms with progress tracking
+  size_t synonymCount = totalOutputSize - dataset.size();
+  size_t currentIndex = newDataset.size();
+  
+  // Pre-allocate space for all synonyms
+  newDataset.resize(totalOutputSize);
+  
+  // Track progress for synonym generation
+  ProgressTracker progress(operationName + " (generating synonyms)", synonymCount);
+  
+  for (size_t i = 0; i < dataset.size(); i++) {
+    if (!validMolecule[i]) continue;
+    
+    for (int j = 0; j < count; j++) {
+      MoleculeRecord newRecord = dataset[i];
+      std::string newSmiles = RDKit::MolToSmiles(*dataset[i].mol, true, false, -1,
+                                               false, false, false, false);
+      newRecord.properties["SMILES"] = newSmiles;
+      newDataset[currentIndex++] = newRecord;
+      progress.update();
+    }
+  }
+  
+  progress.finish();
+  
+  // Replace original dataset with expanded one
+  dataset = std::move(newDataset);
 }
 
 void SmilesHandler::fragmentMolecules(MoleculeDataset& dataset, int count,
                                       const std::string& method,
                                       const po::variables_map& vm) {
-  std::vector<MoleculeRecord> newRecords;
-
-  for (const auto& record : dataset) {
-    if (!record.mol) {
-      continue;
-    }
-    MoleculeDataset frags;
-    std::vector<std::shared_ptr<RDKit::ROMol>> fragmentMols;
-
-    try {
-      if (method == "recap") {
-        // Get bonds to fragment on
-        std::vector<unsigned int> bondIndices;
-        for (auto* const bond : record.mol->bonds()) {
-          if (bond->getBondType() == RDKit::Bond::SINGLE &&
-              bond->getBeginAtom()->getAtomicNum() > 1 &&
-              bond->getEndAtom()->getAtomicNum() > 1) {
-            bondIndices.push_back(bond->getIdx());
-          }
-        }
-
-        // Fragment at those bonds
-        std::shared_ptr<RDKit::ROMol> fragmented(
-            RDKit::MolFragmenter::fragmentOnBonds(*record.mol, bondIndices,
-                                                  false));
-        std::vector<std::shared_ptr<RDKit::ROMol>> recapFrags;
-        auto boostFrags = RDKit::MolOps::getMolFrags(*fragmented);
-        recapFrags.reserve(boostFrags.size());
-        for (const auto& frag : boostFrags) {
-          recapFrags.push_back(std::make_shared<RDKit::ROMol>(*frag));
-        }
-        fragmentMols = recapFrags;
-      } else if (method == "brics") {
-        // Use BRICS fragmentation from RDKit
-        std::vector<unsigned int> bondIndices;
-
-        // Find BRICS bonds using patterns
-        RDKit::ROMOL_SPTR bricsPat(
-            RDKit::SmartsToMol("[!$(*#*)&!D1]-!@[!$(*#*)&!D1]"));
-        std::vector<RDKit::MatchVectType> matches;
-        RDKit::SubstructMatch(*record.mol, *bricsPat, matches);
-
-        for (const auto& match : matches) {
-          const RDKit::Atom* a1 = record.mol->getAtomWithIdx(match[0].second);
-          const RDKit::Atom* a2 = record.mol->getAtomWithIdx(match[1].second);
-
-          // Simple check for carbon-hetero bonds (a rough approximation of
-          // BRICS rules)
-          if ((a1->getAtomicNum() == 6 && a2->getAtomicNum() != 6) ||
-              (a1->getAtomicNum() != 6 && a2->getAtomicNum() == 6)) {
-            const RDKit::Bond* bond = record.mol->getBondBetweenAtoms(
-                match[0].second, match[1].second);
-            if (bond != nullptr) {
-              bondIndices.push_back(bond->getIdx());
-            }
-          }
-        }
-
-        if (!bondIndices.empty()) {
-          std::shared_ptr<RDKit::ROMol> fragmented(
-              RDKit::MolFragmenter::fragmentOnBonds(*record.mol, bondIndices,
-                                                    false));
-          std::vector<std::shared_ptr<RDKit::ROMol>> bricsFrags;
-          auto boostFrags = RDKit::MolOps::getMolFrags(*fragmented);
-          bricsFrags.reserve(boostFrags.size());
-          for (const auto& frag : boostFrags) {
-            bricsFrags.push_back(std::make_shared<RDKit::ROMol>(*frag));
-          }
-          fragmentMols = bricsFrags;
-        }
-      } else {
-        std::cerr << "-- ERROR: Unsupported fragmentation method: " << method
-                  << '\n';
-        continue;
-      }
-    } catch (const std::exception& e) {
-      std::cerr << "-- WARNING: Fragmentation call failed for molecule "
-                << record.properties.at("SMILES") << ": " << e.what() << '\n';
-      continue;
-    }
-
-    for (const auto& frag : fragmentMols) {
-      if (frag && frag->getNumAtoms() > 0) {
-        MoleculeRecord fragRecord = record;
-        fragRecord.mol = std::make_shared<RDKit::ROMol>(*frag);
-        fragRecord.properties["Fragment_Source"] =
-            record.properties.at("SMILES");
+  std::string operationName = "Fragmenting molecules using " + method;
+  
+  // First pass - count fragments to properly allocate memory
+  std::vector<std::vector<std::shared_ptr<RDKit::ROMol>>> allFragments(dataset.size());
+  std::atomic<size_t> totalFragments{0};
+  
+  parallelProcessWithProgress(
+      operationName + " (analyzing)", dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        if (!dataset[i].mol) return;
+        
         try {
-          fragRecord.properties["SMILES"] = RDKit::MolToSmiles(*frag);
-          frags.push_back(fragRecord);
-        } catch (const std::exception& e) {
-          std::cerr << "-- WARNING: Could not generate SMILES for fragment "
-                       "from molecule "
-                    << record.properties.at("SMILES") << ": " << e.what()
+          std::vector<std::shared_ptr<RDKit::ROMol>> fragments;
+          
+          if (method == "recap") {
+            // Get bonds to fragment on
+            std::vector<unsigned int> bondIndices;
+            for (auto* const bond : dataset[i].mol->bonds()) {
+              if (bond->getBondType() == RDKit::Bond::SINGLE &&
+                  bond->getBeginAtom()->getAtomicNum() > 1 &&
+                  bond->getEndAtom()->getAtomicNum() > 1) {
+                bondIndices.push_back(bond->getIdx());
+              }
+            }
+
+            // Fragment at those bonds
+            std::shared_ptr<RDKit::ROMol> fragmented(
+                RDKit::MolFragmenter::fragmentOnBonds(*dataset[i].mol, bondIndices,
+                                                      false));
+            auto boostFrags = RDKit::MolOps::getMolFrags(*fragmented);
+            for (const auto& frag : boostFrags) {
+              if (frag && frag->getNumAtoms() > 0) {
+                fragments.push_back(std::make_shared<RDKit::ROMol>(*frag));
+              }
+            }
+          } else if (method == "brics") {
+            // Use BRICS fragmentation from RDKit
+            std::vector<unsigned int> bondIndices;
+
+            // Find BRICS bonds using patterns
+            RDKit::ROMOL_SPTR bricsPat(
+                RDKit::SmartsToMol("[!$(*#*)&!D1]-!@[!$(*#*)&!D1]"));
+            std::vector<RDKit::MatchVectType> matches;
+            RDKit::SubstructMatch(*dataset[i].mol, *bricsPat, matches);
+
+            for (const auto& match : matches) {
+              const RDKit::Atom* a1 = dataset[i].mol->getAtomWithIdx(match[0].second);
+              const RDKit::Atom* a2 = dataset[i].mol->getAtomWithIdx(match[1].second);
+
+              // Simple check for carbon-hetero bonds (a rough approximation of
+              // BRICS rules)
+              if ((a1->getAtomicNum() == 6 && a2->getAtomicNum() != 6) ||
+                  (a1->getAtomicNum() != 6 && a2->getAtomicNum() == 6)) {
+                const RDKit::Bond* bond = dataset[i].mol->getBondBetweenAtoms(
+                    match[0].second, match[1].second);
+                if (bond != nullptr) {
+                  bondIndices.push_back(bond->getIdx());
+                }
+              }
+            }
+
+            if (!bondIndices.empty()) {
+              std::shared_ptr<RDKit::ROMol> fragmented(
+                  RDKit::MolFragmenter::fragmentOnBonds(*dataset[i].mol, bondIndices,
+                                                        false));
+              auto boostFrags = RDKit::MolOps::getMolFrags(*fragmented);
+              for (const auto& frag : boostFrags) {
+                if (frag && frag->getNumAtoms() > 0) {
+                  fragments.push_back(std::make_shared<RDKit::ROMol>(*frag));
+                }
+              }
+            }
+          } else {
+            #pragma omp critical
+            std::cerr << "-- ERROR: Unsupported fragmentation method: " << method
                     << '\n';
+            return;
+          }
+          
+          // Limit fragments if count > 0
+          if (count > 0 && fragments.size() > static_cast<size_t>(count)) {
+            fragments.resize(count);
+          }
+          
+          allFragments[i] = fragments;
+          totalFragments += fragments.size();
+          
+        } catch (const std::exception& e) {
+          #pragma omp critical
+          std::cerr << "-- WARNING: Fragmentation call failed for molecule "
+                  << i << ": " << e.what() << '\n';
         }
+      });
+  
+  // Calculate total size needed for final dataset
+  size_t keepOriginals = (vm.count("keep-original-data") != 0u);
+  size_t finalSize = totalFragments;
+  if (keepOriginals) {
+    finalSize += dataset.size();
+  }
+  
+  // Create the new dataset
+  MoleculeDataset newDataset;
+  newDataset.reserve(finalSize);
+  
+  // First add originals if keeping them
+  if (keepOriginals) {
+    newDataset.insert(newDataset.end(), dataset.begin(), dataset.end());
+  }
+  
+  // Second pass - convert fragments to records and add to new dataset
+  ProgressTracker progress(operationName + " (building dataset)", totalFragments);
+  
+  for (size_t i = 0; i < dataset.size(); i++) {
+    if (allFragments[i].empty()) continue;
+    
+    for (const auto& frag : allFragments[i]) {
+      MoleculeRecord fragRecord = dataset[i];
+      fragRecord.mol = frag;
+      try {
+        fragRecord.properties["Fragment_Source"] = dataset[i].properties.at("SMILES");
+        fragRecord.properties["SMILES"] = RDKit::MolToSmiles(*frag);
+        newDataset.push_back(fragRecord);
+      } catch (const std::exception& e) {
+        std::cerr << "-- WARNING: Could not generate SMILES for fragment from molecule "
+                  << i << ": " << e.what() << '\n';
       }
-    }
-
-    if ((vm.count("keep-original-data") != 0u) || frags.empty()) {
-      newRecords.push_back(record);
-    }
-
-    // If count > 0, limit the number of fragments
-    int added = 0;
-    for (const auto& frag : frags) {
-      if (count > 0 && added >= count) {
-        break;
-      }
-      newRecords.push_back(frag);
-      added++;
+      progress.update();
     }
   }
-
-  dataset = std::move(newRecords);
+  
+  progress.finish();
+  
+  // Replace original dataset with new one
+  dataset = std::move(newDataset);
 }
 
 void SmilesHandler::desalt(MoleculeDataset& dataset) {
   RDKit::MolStandardize::CleanupParameters params;
   RDKit::MolStandardize::LargestFragmentChooser chooser(params);
 
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
-  for (auto& i : dataset) {
-    try {
-      std::shared_ptr<RDKit::ROMol> cleaned(chooser.choose(*i.mol));
-      std::string newSmiles = RDKit::MolToSmiles(*cleaned);
+  std::string operationName = "Removing salts/solvents";
 
-#ifndef NO_OPENMP
-#pragma omp critical
-#endif
-      {
-        i.mol = cleaned;
-        i.properties["SMILES"] = newSmiles;
-      }
-    } catch (...) {
-    }
-  }
+  parallelProcessWithProgress(
+      operationName, dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        if (!dataset[i].mol) return;
+        
+        try {
+          std::shared_ptr<RDKit::ROMol> cleaned(chooser.choose(*dataset[i].mol));
+          std::string newSmiles = RDKit::MolToSmiles(*cleaned);
+
+          #pragma omp critical
+          {
+            dataset[i].mol = cleaned;
+            dataset[i].properties["SMILES"] = newSmiles;
+          }
+        } catch (...) {
+          // Skip molecules that fail
+        }
+      });
 }
 
 void SmilesHandler::keepLargestFragment(MoleculeDataset& dataset) {
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
-  for (auto& i : dataset) {
-    RDKit::ROMol* mol = i.mol.get();
-    if (mol == nullptr) {
-      continue;
-    }
+  std::string operationName = "Keeping largest fragments";
 
-    std::vector<std::shared_ptr<RDKit::ROMol>> molFrags;
-    auto boostFrags = RDKit::MolOps::getMolFrags(*mol);
-    molFrags.reserve(boostFrags.size());
-    for (auto& frag : boostFrags) {
-      molFrags.push_back(std::make_shared<RDKit::ROMol>(*frag));
-    }
-
-    if (molFrags.size() > 1) {
-      size_t maxIdx = 0;
-      unsigned int maxAtoms = 0;
-
-      for (size_t j = 0; j < molFrags.size(); j++) {
-        unsigned int numAtoms = molFrags[j]->getNumAtoms();
-        if (numAtoms > maxAtoms) {
-          maxAtoms = numAtoms;
-          maxIdx = j;
+  parallelProcessWithProgress(
+      operationName, dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        if (!dataset[i].mol) return;
+        
+        RDKit::ROMol* mol = dataset[i].mol.get();
+        
+        std::vector<std::shared_ptr<RDKit::ROMol>> molFrags;
+        auto boostFrags = RDKit::MolOps::getMolFrags(*mol);
+        molFrags.reserve(boostFrags.size());
+        for (auto& frag : boostFrags) {
+          molFrags.push_back(std::make_shared<RDKit::ROMol>(*frag));
         }
-      }
 
-#ifndef NO_OPENMP
-#pragma omp critical
-#endif
-      {
-        i.mol = molFrags[maxIdx];
-        i.properties["SMILES"] = RDKit::MolToSmiles(*molFrags[maxIdx]);
-      }
-    }
-  }
+        if (molFrags.size() > 1) {
+          size_t maxIdx = 0;
+          unsigned int maxAtoms = 0;
+
+          for (size_t j = 0; j < molFrags.size(); j++) {
+            unsigned int numAtoms = molFrags[j]->getNumAtoms();
+            if (numAtoms > maxAtoms) {
+              maxAtoms = numAtoms;
+              maxIdx = j;
+            }
+          }
+
+          #pragma omp critical
+          {
+            dataset[i].mol = molFrags[maxIdx];
+            dataset[i].properties["SMILES"] = RDKit::MolToSmiles(*molFrags[maxIdx]);
+          }
+        }
+      });
 }
 
 void SmilesHandler::tautomerize(MoleculeDataset& dataset) {
   RDKit::MolStandardize::CleanupParameters params;
   RDKit::MolStandardize::TautomerEnumerator tautomerizer(params);
 
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
-  for (auto& i : dataset) {
-    try {
-      std::shared_ptr<RDKit::ROMol> taut(tautomerizer.canonicalize(*i.mol));
-      std::string newSmiles = RDKit::MolToSmiles(*taut);
+  std::string operationName = "Canonicalizing tautomers";
 
-#ifndef NO_OPENMP
-#pragma omp critical
-#endif
-      {
-        i.mol = taut;
-        i.properties["SMILES"] = newSmiles;
-      }
-    } catch (...) {
-    }
-  }
+  parallelProcessWithProgress(
+      operationName, dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        if (!dataset[i].mol) return;
+        
+        try {
+          std::shared_ptr<RDKit::ROMol> taut(tautomerizer.canonicalize(*dataset[i].mol));
+          std::string newSmiles = RDKit::MolToSmiles(*taut);
+
+          #pragma omp critical
+          {
+            dataset[i].mol = taut;
+            dataset[i].properties["SMILES"] = newSmiles;
+          }
+        } catch (...) {
+          // Skip molecules that fail
+        }
+      });
 }
 
 void SmilesHandler::removeInvalid(MoleculeDataset& dataset) {
-  dataset.erase(std::remove_if(dataset.begin(), dataset.end(),
-                               [](const MoleculeRecord& record) {
-                                 return !record.mol ||
-                                        record.mol->getNumAtoms() == 0;
-                               }),
-                dataset.end());
+  std::string operationName = "Removing invalid molecules";
+  
+  // First, mark invalid molecules in parallel with progress tracking
+  std::vector<bool> validMolecule(dataset.size(), false);
+  
+  parallelProcessWithProgress(
+      operationName + " (identifying)", dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        validMolecule[i] = dataset[i].mol && dataset[i].mol->getNumAtoms() > 0;
+      });
+  
+  // Create a new dataset with only valid molecules
+  MoleculeDataset filteredDataset;
+  filteredDataset.reserve(dataset.size()); // Pre-allocate max possible size
+  
+  ProgressTracker progressFiltering(operationName + " (filtering)", dataset.size());
+  
+  for (size_t i = 0; i < dataset.size(); i++) {
+    if (validMolecule[i]) {
+      filteredDataset.push_back(std::move(dataset[i]));
+    }
+    progressFiltering.update();
+  }
+  
+  progressFiltering.finish();
+  
+  // Replace original dataset with filtered one
+  dataset = std::move(filteredDataset);
+  
+  std::cout << "-- Dataset now contains " << dataset.size() << " valid molecules" << '\n';
 }
 
 void SmilesHandler::neutralize(MoleculeDataset& dataset) {
   RDKit::MolStandardize::Uncharger uncharger;
+  
+  std::string operationName = "Neutralizing charged molecules";
 
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
-  for (size_t i = 0; i < dataset.size(); i++) {
-    try {
-      if (!dataset[i].mol) {
-        continue;
-      }
-      std::shared_ptr<RDKit::ROMol> charged(
-          uncharger.uncharge(*dataset[i].mol));
-      std::string newSmiles = RDKit::MolToSmiles(*charged);
+  parallelProcessWithProgress(
+      operationName, dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        if (!dataset[i].mol) return;
+        
+        try {
+          std::shared_ptr<RDKit::ROMol> charged(uncharger.uncharge(*dataset[i].mol));
+          std::string newSmiles = RDKit::MolToSmiles(*charged);
 
-#ifndef NO_OPENMP
-#pragma omp critical
-#endif
-      {
-        dataset[i].mol = charged;
-        dataset[i].properties["SMILES"] = newSmiles;
-      }
-    } catch (const std::exception& e) {
-      std::cerr << "-- WARNING: Neutralization failed for molecule " << i
-                << ": " << e.what() << '\n';
-    }
-  }
+          #pragma omp critical
+          {
+            dataset[i].mol = charged;
+            dataset[i].properties["SMILES"] = newSmiles;
+          }
+        } catch (const std::exception& e) {
+          #pragma omp critical
+          std::cerr << "-- WARNING: Neutralization failed for molecule " << i
+                    << ": " << e.what() << '\n';
+        }
+      });
 }
 
 void SmilesHandler::addHydrogens(MoleculeDataset& dataset) {
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
-  for (auto& i : dataset) {
-    std::shared_ptr<RDKit::ROMol> mol(RDKit::MolOps::addHs(*i.mol));
-    std::string newSmiles = RDKit::MolToSmiles(*mol);
+  std::string operationName = "Adding hydrogens";
 
-#ifndef NO_OPENMP
-#pragma omp critical
-#endif
-    {
-      i.mol = mol;
-      i.properties["SMILES"] = newSmiles;
-    }
-  }
+  parallelProcessWithProgress(
+      operationName, dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        if (!dataset[i].mol) return;
+        
+        std::shared_ptr<RDKit::ROMol> mol(RDKit::MolOps::addHs(*dataset[i].mol));
+        std::string newSmiles = RDKit::MolToSmiles(*mol);
+
+        #pragma omp critical
+        {
+          dataset[i].mol = mol;
+          dataset[i].properties["SMILES"] = newSmiles;
+        }
+      });
 }
 
 void SmilesHandler::generateStereoisomers(MoleculeDataset& dataset, int count) {
@@ -639,29 +717,35 @@ void SmilesHandler::generateStereoisomers(MoleculeDataset& dataset, int count) {
 
 void SmilesHandler::generateMurckoScaffold(MoleculeDataset& dataset,
                                            const std::string& colName) {
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
-  for (auto& i : dataset) {
-    RDKit::ROMol* scaffold = RDKit::MurckoDecompose(*i.mol);
-    if ((scaffold != nullptr) && scaffold->getNumAtoms() > 0) {
-      std::string scaffoldSmiles = RDKit::MolToSmiles(*scaffold);
+  std::string operationName = "Generating Murcko scaffolds";
 
-#ifndef NO_OPENMP
-#pragma omp critical
-#endif
-      i.properties[colName] = scaffoldSmiles;
+  parallelProcessWithProgress(
+      operationName, dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        if (!dataset[i].mol) {
+          dataset[i].properties[colName] = "";
+          return;
+        }
+        
+        RDKit::ROMol* scaffold = RDKit::MurckoDecompose(*dataset[i].mol);
+        if ((scaffold != nullptr) && scaffold->getNumAtoms() > 0) {
+          std::string scaffoldSmiles = RDKit::MolToSmiles(*scaffold);
 
-      delete scaffold;
-    } else {
-#ifndef NO_OPENMP
-#pragma omp critical
-#endif
-      i.properties[colName] = "";
+          #pragma omp critical
+          {
+            dataset[i].properties[colName] = scaffoldSmiles;
+          }
 
-      delete scaffold;
-    }
-  }
+          delete scaffold;
+        } else {
+          #pragma omp critical
+          {
+            dataset[i].properties[colName] = "";
+          }
+
+          delete scaffold;
+        }
+      });
 }
 
 void SmilesHandler::standardize(MoleculeDataset& dataset) {
@@ -697,22 +781,23 @@ void SmilesHandler::standardize(MoleculeDataset& dataset) {
 }
 
 void SmilesHandler::removeStereochemistry(MoleculeDataset& dataset) {
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
-  for (auto& i : dataset) {
-    auto* mol = new RDKit::ROMol(*i.mol);
-    RDKit::MolOps::removeStereochemistry(*mol);
-    std::string newSmiles = RDKit::MolToSmiles(*mol);
+  std::string operationName = "Removing stereochemistry";
 
-#ifndef NO_OPENMP
-#pragma omp critical
-#endif
-    {
-      i.mol.reset(mol);
-      i.properties["SMILES"] = newSmiles;
-    }
-  }
+  parallelProcessWithProgress(
+      operationName, dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        if (!dataset[i].mol) return;
+        
+        auto* mol = new RDKit::ROMol(*dataset[i].mol);
+        RDKit::MolOps::removeStereochemistry(*mol);
+        std::string newSmiles = RDKit::MolToSmiles(*mol);
+
+        #pragma omp critical
+        {
+          dataset[i].mol.reset(mol);
+          dataset[i].properties["SMILES"] = newSmiles;
+        }
+      });
 }
 
 void SmilesHandler::substructureMatch(MoleculeDataset& dataset,
@@ -731,18 +816,24 @@ void SmilesHandler::substructureMatch(MoleculeDataset& dataset,
     return;
   }
 
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
-  for (auto& i : dataset) {
-    RDKit::MatchVectType match;
-    bool hasMatch = RDKit::SubstructMatch(*i.mol, *pattern, match);
+  std::string operationName = "Finding substructure matches for " + smarts;
 
-#ifndef NO_OPENMP
-#pragma omp critical
-#endif
-    i.properties[colName] = hasMatch ? "1" : "0";
-  }
+  parallelProcessWithProgress(
+      operationName, dataset.size(), omp_get_max_threads(), false,
+      [&](size_t i) {
+        if (!dataset[i].mol) {
+          dataset[i].properties[colName] = "0";
+          return;
+        }
+        
+        RDKit::MatchVectType match;
+        bool hasMatch = RDKit::SubstructMatch(*dataset[i].mol, *pattern, match);
+
+        #pragma omp critical
+        {
+          dataset[i].properties[colName] = hasMatch ? "1" : "0";
+        }
+      });
 
   delete pattern;
 }

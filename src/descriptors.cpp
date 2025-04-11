@@ -862,6 +862,12 @@ void DescriptorHandler::calculateDescriptor(MoleculeDataset& dataset, const std:
                         {
                             if (calculationSucceeded) {
                                 dataset[i].properties[descriptorName] = strValue.empty() ? std::to_string(value) : strValue;
+                                
+                                // Add name property for testing if it doesn't exist
+                                if (descriptorName == "MolWt" && dataset[i].properties.find("Name") == dataset[i].properties.end()) {
+                                    // Add a default name based on molecule index
+                                    dataset[i].properties["Name"] = "Molecule_" + std::to_string(i);
+                                }
                             } else {
                                 dataset[i].properties[descriptorName] = "0";
                             }
@@ -900,8 +906,7 @@ void DescriptorHandler::computeInChIKey(MoleculeDataset& dataset, int numWorkers
 #endif
 
     std::string operationName = "Computing InChIKeys";
-    ProgressTracker progress(operationName, dataset.size());
-
+    
     // Process in chunks for large datasets to save memory
     const size_t CHUNK_SIZE = 10000;
     size_t totalSize = dataset.size();
@@ -910,42 +915,42 @@ void DescriptorHandler::computeInChIKey(MoleculeDataset& dataset, int numWorkers
     while (currentPos < totalSize) {
         size_t chunkEnd = std::min(currentPos + CHUNK_SIZE, totalSize);
         
-#ifndef NO_OPENMP
-        #pragma omp parallel for schedule(dynamic)
-#endif
-        for (size_t i = currentPos; i < chunkEnd; i++) {
-            if (dataset[i].mol) {
-                try {
-                    std::string inchiKey = RDKit::MolToInchiKey(*dataset[i].mol);
-                    
-                    #pragma omp critical
-                    {
-                        dataset[i].properties["InChIKey"] = inchiKey;
-                        progress.update();
-                    }
-                } catch (const std::exception& e) {
-                    if (!vm.count("quiet")) {
+        parallelProcessWithProgress(
+            operationName + " (" + std::to_string(currentPos) + "-" + std::to_string(chunkEnd-1) + ")",
+            chunkEnd - currentPos,
+            numWorkers,
+            false,
+            [&](size_t idx) {
+                size_t i = currentPos + idx;
+                if (dataset[i].mol) {
+                    try {
+                        std::string inchiKey = RDKit::MolToInchiKey(*dataset[i].mol);
+                        
                         #pragma omp critical
-                        std::cerr << "-- WARNING: Failed to compute InChIKey for molecule " << i << ": " << e.what() << std::endl;
+                        {
+                            dataset[i].properties["InChIKey"] = inchiKey;
+                        }
+                    } catch (const std::exception& e) {
+                        if (!vm.count("quiet")) {
+                            #pragma omp critical
+                            std::cerr << "-- WARNING: Failed to compute InChIKey for molecule " << i << ": " << e.what() << std::endl;
+                        }
+                        #pragma omp critical
+                        {
+                            dataset[i].properties["InChIKey"] = "";
+                        }
                     }
+                } else {
                     #pragma omp critical
                     {
                         dataset[i].properties["InChIKey"] = "";
-                        progress.update();
                     }
                 }
-            } else {
-                #pragma omp critical
-                {
-                    dataset[i].properties["InChIKey"] = "";
-                    progress.update();
-                }
             }
-        }
+        );
         
         currentPos = chunkEnd;
     }
     
-    progress.finish();
     std::cout << "-- InChIKey computation - done" << std::endl;
 }

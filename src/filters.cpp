@@ -198,11 +198,14 @@ void FilterHandler::filterByProperty(MoleculeDataset& dataset,
   std::vector<MoleculeRecord> newDataset;
   newDataset.reserve(dataset.size());  // Allocate max possible size
 
+  ProgressTracker progress("Creating filtered dataset", dataset.size());
   for (size_t i = 0; i < dataset.size(); i++) {
     if (keepFlags[i]) {
       newDataset.push_back(dataset[i]);
     }
+    progress.update();
   }
+  progress.finish();
 
   dataset = std::move(newDataset);
   std::cout << "-- Filtered dataset now contains " << dataset.size()
@@ -218,10 +221,10 @@ void FilterHandler::sortByProperty(MoleculeDataset& dataset,
   // First extract values to sort by in parallel
   std::vector<std::pair<double, size_t>> valueIndices(dataset.size());
 
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
-  for (size_t i = 0; i < dataset.size(); i++) {
+  std::string operationName = "Extracting property values for sorting";
+  
+  parallelProcessWithProgress(operationName, dataset.size(),
+                              omp_get_max_threads(), false, [&](size_t i) {
     auto it = dataset[i].properties.find(property);
     double value = std::numeric_limits<double>::quiet_NaN();
 
@@ -234,9 +237,12 @@ void FilterHandler::sortByProperty(MoleculeDataset& dataset,
     }
 
     valueIndices[i] = {value, i};
-  }
+  });
 
   // Sort by value
+  std::string sortName = "Sorting values: " + property;
+  ProgressTracker sortProgress(sortName, 1);
+  
   if (ascending) {
     std::sort(valueIndices.begin(), valueIndices.end(),
               [](const auto& a, const auto& b) {
@@ -256,16 +262,21 @@ void FilterHandler::sortByProperty(MoleculeDataset& dataset,
                 return a.first > b.first;
               });
   }
+  sortProgress.update();
+  sortProgress.finish();
 
   // Create new dataset in sorted order
   MoleculeDataset newDataset;
   newDataset.reserve(dataset.size());
 
+  ProgressTracker copyProgress("Creating sorted dataset", valueIndices.size());
   for (const auto& pair : valueIndices) {
     if (!std::isnan(pair.first)) {
       newDataset.push_back(dataset[pair.second]);
     }
+    copyProgress.update();
   }
+  copyProgress.finish();
 
   dataset = std::move(newDataset);
 }

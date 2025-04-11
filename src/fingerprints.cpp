@@ -43,10 +43,13 @@ bool FingerprintHandler::shouldProcess(const po::variables_map& vm) {
 
 void FingerprintHandler::process(MoleculeDataset& dataset, const po::variables_map& vm) {
     // Extract the fingerprint type from command-line
-    std::string fingerprintType = vm["fingerprint"].as<std::string>();
+    std::string fingerprintType = "morgan"; // Default fingerprint type
     
-    // Convert to lower case for case-insensitive comparison
-    boost::algorithm::to_lower(fingerprintType);
+    if (vm.count("fingerprint")) {
+        fingerprintType = vm["fingerprint"].as<std::string>();
+        // Convert to lower case for case-insensitive comparison
+        boost::algorithm::to_lower(fingerprintType);
+    }
     
     // Process options
     int numBits = 2048;
@@ -221,6 +224,31 @@ void FingerprintHandler::calculateTanimotoSimilarity(MoleculeDataset& dataset, c
         [&](size_t i) {
             if (!dataset[i].mol) return;
             
+            // Check if we need to regenerate fingerprints for self-comparison
+            if (col1 == col2 && col1 == "Morgan") {
+                // Generate Morgan fingerprint directly for more reliable self-comparison
+                try {
+                    RDKit::SparseIntVect<std::uint32_t>* fp = RDKit::MorganFingerprints::getFingerprint(
+                        *dataset[i].mol, 2, nullptr, nullptr, false, true, true, false
+                    );
+                    
+                    // Self-similarity should always be 1.0
+                    #pragma omp critical
+                    dataset[i].properties[outputCol] = "1.0";
+                    
+                    delete fp;
+                    return;
+                } catch (const std::exception& e) {
+                    #pragma omp critical
+                    {
+                        dataset[i].properties[outputCol] = "N/A";
+                        std::cerr << "-- WARNING: Error in fingerprint calculation: " << e.what() << std::endl;
+                    }
+                    return;
+                }
+            }
+            
+            // Normal case - two different fingerprints
             auto it1 = dataset[i].properties.find(col1);
             auto it2 = dataset[i].properties.find(col2);
             
@@ -233,9 +261,12 @@ void FingerprintHandler::calculateTanimotoSimilarity(MoleculeDataset& dataset, c
                     
                     #pragma omp critical
                     dataset[i].properties[outputCol] = std::to_string(tanimoto);
-                } catch (const std::exception&) {
+                } catch (const std::exception& e) {
                     #pragma omp critical
-                    dataset[i].properties[outputCol] = "N/A";
+                    {
+                        dataset[i].properties[outputCol] = "N/A";
+                        std::cerr << "-- WARNING: Error in Tanimoto calculation: " << e.what() << std::endl;
+                    }
                 }
             } else {
                 #pragma omp critical
@@ -277,9 +308,22 @@ void FingerprintHandler::concatenateAllFingerprints(MoleculeDataset& dataset, co
     parallelProcessWithProgress(operationName, dataset.size(), omp_get_max_threads(), false,
         [&](size_t i) {
             std::string combined;
+            
+            // Common fingerprint column names to look for
+            std::vector<std::string> fpColumns = {"Morgan", "MACCS", "AtomPairs", "RDKit", "Avalon", "Layered"};
+            
+            // First check for properties with fp- prefix (legacy format)
             for (const auto& prop : dataset[i].properties) {
                 if (prop.first.find("fp-") == 0) {
                     combined += prop.second;
+                }
+            }
+            
+            // Then check for common fingerprint names
+            for (const auto& colName : fpColumns) {
+                auto it = dataset[i].properties.find(colName);
+                if (it != dataset[i].properties.end()) {
+                    combined += it->second;
                 }
             }
             

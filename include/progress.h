@@ -8,6 +8,8 @@
 #include <utility>
 #include <vector>
 #include <chrono>
+#include <functional>
+#include <sstream>
 
 class ProgressTracker {
 private:
@@ -23,13 +25,14 @@ private:
     static constexpr double minProgressStep = 0.01; // 0.01% minimum step
     
 public:
-    ProgressTracker(std::string  name, size_t total, bool isVerbose = false) 
-        : taskName(std::move(name)), totalItems(total), verbose(isVerbose) {
+    ProgressTracker(const std::string& operationName, size_t total, bool isVerbose = false) 
+        : taskName(operationName), totalItems(total), verbose(isVerbose) {
         startTime = std::chrono::steady_clock::now();
     }
     
-    void update(size_t count = 1) {
-        size_t current = processedItems.fetch_add(count) + count;
+    // Update progress by given increment (default is 1)
+    void update(size_t increment = 1) {
+        size_t current = processedItems.fetch_add(increment) + increment;
         
         // Only report if we've reached a new percentage point (at 0.01% granularity)
         double percentage = (static_cast<double>(current) / totalItems) * 100.0;
@@ -64,6 +67,7 @@ public:
         }
     }
     
+    // Mark the operation as completed
     void finish() {
         auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - startTime).count() / 1000.0;
@@ -93,22 +97,11 @@ private:
     }
 };
 
-// Helper template for calculating descriptors in parallel with progress tracking
-template<typename Func>
+// Helper function for parallel processing with progress reporting
 void parallelProcessWithProgress(
-    const std::string& taskName,
-    size_t totalItems,
+    const std::string& operationName,
+    size_t itemCount,
     int numThreads,
     bool verbose,
-    Func processingFunction
-) {
-    ProgressTracker progress(taskName, totalItems, verbose);
-    
-    #pragma omp parallel for num_threads(numThreads)
-    for (size_t i = 0; i < totalItems; i++) {
-        processingFunction(i);
-        progress.update(1);
-    }
-    
-    progress.finish();
-} 
+    std::function<void(size_t)> processFunction
+); 

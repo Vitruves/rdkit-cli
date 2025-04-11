@@ -12,6 +12,7 @@
 #include <iostream>
 #include <sstream>
 #include <thread>
+#include <random>  // for std::random_device, std::mt19937, and std::shuffle
 
 #include "../include/progress.h"
 #ifndef NO_OPENMP
@@ -20,9 +21,9 @@
 
 void DataOptions::addOptions(po::options_description& desc) {
   desc.add_options()("split-output",
-                     po::value<std::vector<float>>()->multitoken(),
-                     "Split output by percentage")(
-      "keep-original-data", "Keep original data in output");
+                     po::value<std::string>(),
+                     "Split output by percentage");
+  // Note: "keep-original-data" is already defined in io options
 }
 
 MoleculeDataset DataHandler::loadFile(const po::variables_map& vm) {
@@ -44,6 +45,8 @@ MoleculeDataset DataHandler::loadFile(const po::variables_map& vm) {
         format = "csv";
       else if (ext == "tsv")
         format = "tsv";
+      else if (ext == "mol")
+        format = "mol";
     }
   }
 
@@ -74,7 +77,7 @@ MoleculeDataset DataHandler::loadFile(const po::variables_map& vm) {
 
   MoleculeDataset dataset;
 
-  if (format == "sdf") {
+  if (format == "sdf" || format == "mol") {
     return loadSDF(filePath);
   } else if (format == "smi") {
     return loadSMILES(filePath);
@@ -263,9 +266,6 @@ MoleculeDataset DataHandler::loadCSV(const std::string& filePath,
     }
   }
 
-  std::string operationName = "Loading CSV file";
-  ProgressTracker progress(operationName, lineCount);
-
   // Configure number of threads
   int numWorkers = vm.count("mpu") ? vm["mpu"].as<int>()
                                    : std::thread::hardware_concurrency() - 2;
@@ -277,103 +277,116 @@ MoleculeDataset DataHandler::loadCSV(const std::string& filePath,
   std::mutex recordsMutex;
 
   std::string line;
-  std::vector<std::string> chunk;
+  std::vector<std::string> chunkLines;
   size_t lineIndex = 0;
+  
+  std::string operationName = "Loading CSV file";
+  ProgressTracker progress(operationName, lineCount);
 
-  while (std::getline(file, line) || !chunk.empty()) {
+  while (std::getline(file, line) || !chunkLines.empty()) {
     if (!line.empty()) {
-      chunk.push_back(line);
+      chunkLines.push_back(line);
     }
 
     // Process chunk when it reaches CHUNK_SIZE or at end of file
-    if (chunk.size() >= CHUNK_SIZE || (line.empty() && !chunk.empty())) {
-      std::vector<std::string> currentChunk = std::move(chunk);
-      chunk.clear();
+    if (chunkLines.size() >= CHUNK_SIZE || (line.empty() && !chunkLines.empty())) {
+      std::vector<std::string> currentChunk = std::move(chunkLines);
+      chunkLines.clear();
 
-#ifndef NO_OPENMP
-#pragma omp parallel for num_threads(numWorkers)
-#endif
-      for (size_t i = 0; i < currentChunk.size(); i++) {
-        const std::string& currentLine = currentChunk[i];
-        std::vector<std::string> values;
-        std::stringstream ss(currentLine);
-        std::string value;
-        while (std::getline(ss, value, delimiter)) {
-          values.push_back(value);
-        }
+      parallelProcessWithProgress(
+          operationName + " (chunk " + std::to_string(lineIndex) + "-" + std::to_string(lineIndex + currentChunk.size()) + ")",
+          currentChunk.size(),
+          numWorkers,
+          false,
+          [&](size_t i) {
+            const std::string& currentLine = currentChunk[i];
+            std::vector<std::string> values;
+            std::stringstream ss(currentLine);
+            std::string value;
+            while (std::getline(ss, value, delimiter)) {
+              values.push_back(value);
+            }
 
-        if (values.size() != columnNames.size()) {
-          bool quiet = vm.count("quiet");
-          if (!quiet) {
-#pragma omp critical
-            std::cerr
-                << "-- Warning: Skipping line with incorrect number of columns"
-                << '\n';
-          }
-          continue;
-        }
+            if (values.size() != columnNames.size()) {
+              bool quiet = vm.count("quiet");
+              if (!quiet) {
+              #pragma omp critical
+                std::cerr
+                    << "-- Warning: Skipping line with incorrect number of columns"
+                    << '\n';
+              }
+              return;
+            }
 
-        for (size_t smilesCol : smilesColumns) {
-          if (smilesCol >= values.size()) continue;
+            std::vector<MoleculeRecord> threadRecords;
+            
+            for (size_t smilesCol : smilesColumns) {
+              if (smilesCol >= values.size()) continue;
 
-          const std::string& smilesString = values[smilesCol];
-          if (smilesString.empty()) continue;
+              const std::string& smilesString = values[smilesCol];
+              if (smilesString.empty()) continue;
 
-          try {
-            // Parse SMILES - use sanitize=false to catch errors in SMILES
-            // handling
-            std::unique_ptr<RDKit::ROMol> mol(
-                RDKit::SmilesToMol(smilesString, 0, false));
-            if (mol) {
               try {
-                // Convert to RWMol for sanitization
-                RDKit::RWMol rwmol(*mol);
-                // Now sanitize separately to catch any issues
-                unsigned int failedOp;
-                RDKit::MolOps::sanitizeMol(rwmol, failedOp);
+                // Parse SMILES - use sanitize=false to catch errors in SMILES
+                // handling
+                std::unique_ptr<RDKit::ROMol> mol(
+                    RDKit::SmilesToMol(smilesString, 0, false));
+                if (mol) {
+                  try {
+                    // Convert to RWMol for sanitization
+                    RDKit::RWMol rwmol(*mol);
+                    // Now sanitize separately to catch any issues
+                    unsigned int failedOp;
+                    RDKit::MolOps::sanitizeMol(rwmol, failedOp);
 
-                // Use the sanitized molecule
-                MoleculeRecord record;
-                record.mol = std::make_shared<RDKit::ROMol>(rwmol);
+                    // Use the sanitized molecule
+                    MoleculeRecord record;
+                    record.mol = std::make_shared<RDKit::ROMol>(rwmol);
 
-                // Store all columns as properties
-                for (size_t j = 0; j < values.size(); j++) {
-                  record.properties[columnNames[j]] = values[j];
-                }
+                    // Store all columns as properties
+                    for (size_t j = 0; j < values.size(); j++) {
+                      record.properties[columnNames[j]] = values[j];
+                    }
 
-#pragma omp critical
-                {
-                  records.push_back(record);
+                    threadRecords.push_back(record);
+                  } catch (const std::exception& e) {
+                    if (!vm.count("quiet")) {
+                    #pragma omp critical
+                      std::cerr << "-- Warning: Molecule failed sanitization: "
+                                << smilesString << " (" << e.what() << ")" << '\n';
+                    }
+                  }
                 }
               } catch (const std::exception& e) {
                 if (!vm.count("quiet")) {
-#pragma omp critical
-                  std::cerr << "-- Warning: Molecule failed sanitization: "
+                #pragma omp critical
+                  std::cerr << "-- Warning: Failed to parse SMILES: "
                             << smilesString << " (" << e.what() << ")" << '\n';
                 }
               }
             }
-          } catch (const std::exception& e) {
-            if (!vm.count("quiet")) {
-#pragma omp critical
-              std::cerr << "-- Warning: Failed to parse SMILES: "
-                        << smilesString << " (" << e.what() << ")" << '\n';
+
+            if (!threadRecords.empty()) {
+            #pragma omp critical
+              {
+                records.insert(records.end(), threadRecords.begin(), threadRecords.end());
+              }
+            }
+            
+            #pragma omp critical
+            {
+              progress.update();
             }
           }
-        }
-
-#pragma omp critical
-        {
-          progress.update();
-          lineIndex++;
-        }
-      }
+      );
 
       // Update dataset periodically to release memory
       if (records.size() > CHUNK_SIZE * 2) {
         dataset.insert(dataset.end(), records.begin(), records.end());
         records.clear();
       }
+      
+      lineIndex += currentChunk.size();
     }
 
     line.clear();  // Ensure line is empty for the next iteration
@@ -471,38 +484,31 @@ void DataHandler::saveData(MoleculeDataset& dataset,
 
   if (format == "sdf") {
     RDKit::SDWriter writer(outputPath);
-
-    // Pre-process molecules in parallel
-    std::vector<std::string> sdRecords(dataset.size());
-
-#ifndef NO_OPENMP
-#pragma omp parallel for
-#endif
+    
+    // Write molecules sequentially to avoid errors
     for (size_t i = 0; i < dataset.size(); i++) {
       if (dataset[i].mol) {
-        // Copy properties to the molecule
-        RDKit::ROMol mol(*dataset[i].mol);
-        for (const auto& prop : dataset[i].properties) {
-          mol.setProp(prop.first, prop.second);
+        try {
+          // Create a copy and add properties
+          RDKit::ROMol mol(*dataset[i].mol);
+          
+          // Add properties
+          for (const auto& prop : dataset[i].properties) {
+            mol.setProp(prop.first, prop.second);
+          }
+          
+          // Write directly without using string serialization
+          writer.write(mol);
+          writer.flush();
+        } catch (const std::exception& e) {
+          if (!vm.count("quiet")) {
+            std::cerr << "-- WARNING: Failed to write molecule " << i << ": " << e.what() << std::endl;
+          }
         }
-
-        // Create SD string - Note: SDWriter doesn't support parallel writing
-        // so we create strings in parallel, then write sequentially
-        std::stringstream ss;
-        RDKit::SDWriter writer(&ss);
-        writer.write(mol);
-        sdRecords[i] = ss.str();
-      }
-    }
-
-    // Write sequentially
-    for (size_t i = 0; i < dataset.size(); i++) {
-      if (!sdRecords[i].empty()) {
-        writer.write(sdRecords[i]);
       }
       progress.update();
     }
-
+    
     writer.close();
   } else if (format == "smi") {
     // Prepare SMILES strings in parallel
@@ -617,4 +623,82 @@ std::string DataHandler::getFileExtension(const std::string& filename) {
     return ext;
   }
   return "";
+}
+
+void DataHandler::splitOutput(MoleculeDataset& dataset, const std::string& outputPath, const std::string& splits) {
+  std::cout << "-- Splitting output data" << std::endl;
+  
+  // Parse splits parameter (should be comma-separated numbers)
+  std::vector<float> splitRatios;
+  std::stringstream ss(splits);
+  std::string item;
+  float total = 0.0f;
+  
+  while (std::getline(ss, item, ',')) {
+    try {
+      float ratio = std::stof(item);
+      total += ratio;
+      splitRatios.push_back(ratio);
+    } catch (const std::exception& e) {
+      std::cerr << "-- ERROR: Invalid split ratio: " << item << std::endl;
+      return;
+    }
+  }
+  
+  if (splitRatios.size() < 2) {
+    std::cerr << "-- ERROR: At least two split ratios are required" << std::endl;
+    return;
+  }
+  
+  // Normalize ratios to sum to 1.0
+  for (auto& ratio : splitRatios) {
+    ratio /= total;
+  }
+  
+  // Get base file path and extension
+  std::string basePath = outputPath;
+  std::string extension = ".csv"; // Default
+  
+  // Create split datasets
+  size_t datasetSize = dataset.size();
+  std::vector<MoleculeDataset> splitDatasets(splitRatios.size());
+  
+  // Shuffle indices
+  std::vector<size_t> indices(datasetSize);
+  for (size_t i = 0; i < datasetSize; ++i) {
+    indices[i] = i;
+  }
+  std::random_device rd;
+  std::mt19937 g(rd());
+  std::shuffle(indices.begin(), indices.end(), g);
+  
+  // Assign molecules to splits
+  size_t currentIndex = 0;
+  for (size_t splitIdx = 0; splitIdx < splitRatios.size(); ++splitIdx) {
+    size_t splitSize = static_cast<size_t>(splitRatios[splitIdx] * datasetSize);
+    if (splitIdx == splitRatios.size() - 1) {
+      // Ensure all remaining molecules are added to the last split
+      splitSize = datasetSize - currentIndex;
+    }
+    
+    for (size_t i = 0; i < splitSize && currentIndex < datasetSize; ++i, ++currentIndex) {
+      splitDatasets[splitIdx].push_back(dataset[indices[currentIndex]]);
+    }
+  }
+  
+  // Save split datasets
+  std::vector<std::string> splitNames = {"train", "test", "validation"};
+  for (size_t i = 0; i < splitDatasets.size(); ++i) {
+    std::string splitName = i < splitNames.size() ? splitNames[i] : "split" + std::to_string(i);
+    std::string outputFilePath = basePath + "_" + splitName + extension;
+    
+    po::variables_map tempVm;
+    tempVm.insert(std::make_pair("output", po::variable_value(boost::any(outputFilePath), false)));
+    tempVm.insert(std::make_pair("output-format", po::variable_value(boost::any(std::string("csv")), false)));
+    
+    saveData(splitDatasets[i], tempVm);
+    std::cout << "-- Created " << splitName << " dataset with " << splitDatasets[i].size() << " molecules" << std::endl;
+  }
+  
+  std::cout << "-- Split operation complete" << std::endl;
 }

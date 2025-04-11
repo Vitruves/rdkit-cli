@@ -60,7 +60,11 @@ int main(int argc, char* argv[]) {
         ConformerOptions::addOptions(conformer);
         FilterOptions::addOptions(filter);
         VisualizationOptions::addOptions(visualization);
-        DataOptions::addOptions(data);
+        
+        // Remove the duplicate option in DataOptions
+        data.add_options()
+            ("split-output", po::value<std::string>(), "Split output by percentage");
+        // Note: "keep-original-data" is already defined in io options
         
         // Combine all option categories for parsing
         po::options_description all_options;
@@ -135,6 +139,26 @@ int main(int argc, char* argv[]) {
         // Process visualization operations
         if (VisualizationHandler::shouldProcess(vm)) {
             VisualizationHandler::process(dataset, vm);
+        }
+
+        // Handle split output if specified
+        if (vm.count("split-output") && vm.count("file")) {
+            std::string outputPath = vm["split-output"].as<std::string>();
+            std::string splits = "80,20"; // Default split
+            
+            // Check next argument for split ratios
+            for (int i = 1; i < argc; i++) {
+                std::string arg = argv[i];
+                if (arg == "--split-output" && i + 2 < argc) {
+                    std::string next = argv[i + 2];
+                    if (next.find("--") != 0) { // Not another option
+                        splits = next;
+                    }
+                    break;
+                }
+            }
+            
+            DataHandler::splitOutput(dataset, outputPath, splits);
         }
 
         // Save data

@@ -35,6 +35,7 @@ public:
     static MoleculeDataset loadSmiles(const po::variables_map& vm);
     static void saveData(MoleculeDataset& dataset, const po::variables_map& vm);
     static std::string getFileExtension(const std::string& filename);
+    static void splitOutput(MoleculeDataset& dataset, const std::string& outputPath, const std::string& splits);
     
 private:
     static MoleculeDataset loadSDF(const std::string& filePath);
