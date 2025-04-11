@@ -27,15 +27,13 @@ Prerequisites:
 Build steps:
 
 ```bash
-git clone <>
+git clone https://github.com/Vitruves/rdkit-cli
 cd rdkit-cli
-./build.sh
-```
-
-To install system-wide:
-
-```bash
-./build.sh --install
+mkdir build
+cd build
+cmake ..
+make -j
+make install
 ```
 
 ## Usage
