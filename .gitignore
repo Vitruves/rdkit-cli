@@ -1,1 +1,11 @@
 STRUCTURE.md
+.claude/
+.pytest_cache/
+.venv/
+.coverage
+CLAUDE.md
+CLAUDE.local.md
+.gitignore
+.DS_Store
+rdkit_cli/core/__pycache__/
+rdkit_cli/commands/__pycache__
