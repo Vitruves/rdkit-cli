@@ -8,4 +8,5 @@ CLAUDE.local.md
 .gitignore
 .DS_Store
 rdkit_cli/core/__pycache__/
-rdkit_cli/commands/__pycache__
+rdkit_cli/commands/__pycache__/
+tests/__pycache__/
