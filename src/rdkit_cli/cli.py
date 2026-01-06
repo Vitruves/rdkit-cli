@@ -68,6 +68,18 @@ def add_common_processing_options(parser: argparse.ArgumentParser):
         action="store_true",
         help="Suppress progress output",
     )
+    parser.add_argument(
+        "--no-warnings",
+        action="store_true",
+        help="Suppress RDKit warnings (kekulization errors, etc.)",
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warning", "error", "critical"],
+        default=None,
+        metavar="LEVEL",
+        help="RDKit log level (default: warning, use 'error' to suppress warnings)",
+    )
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -100,39 +112,49 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def _register_commands(subparsers):
-    """Register all command subparsers."""
+    """Register all command subparsers (alphabetical order)."""
     from rdkit_cli.commands import (
-        descriptors,
-        fingerprints,
-        filter,
-        convert,
-        standardize,
-        similarity,
         conformers,
-        reactions,
-        scaffold,
-        enumerate,
-        fragment,
-        diversity,
-        mcs,
+        convert,
+        deduplicate,
         depict,
+        descriptors,
+        diversity,
+        enumerate,
+        filter,
+        fingerprints,
+        fragment,
+        mcs,
+        reactions,
+        sample,
+        scaffold,
+        similarity,
+        split,
+        standardize,
+        stats,
+        validate,
     )
 
     # Each module has a register_parser(subparsers) function
-    descriptors.register_parser(subparsers)
-    fingerprints.register_parser(subparsers)
-    filter.register_parser(subparsers)
-    convert.register_parser(subparsers)
-    standardize.register_parser(subparsers)
-    similarity.register_parser(subparsers)
     conformers.register_parser(subparsers)
-    reactions.register_parser(subparsers)
-    scaffold.register_parser(subparsers)
-    enumerate.register_parser(subparsers)
-    fragment.register_parser(subparsers)
-    diversity.register_parser(subparsers)
-    mcs.register_parser(subparsers)
+    convert.register_parser(subparsers)
+    deduplicate.register_parser(subparsers)
     depict.register_parser(subparsers)
+    descriptors.register_parser(subparsers)
+    diversity.register_parser(subparsers)
+    enumerate.register_parser(subparsers)
+    filter.register_parser(subparsers)
+    fingerprints.register_parser(subparsers)
+    fragment.register_parser(subparsers)
+    mcs.register_parser(subparsers)
+    reactions.register_parser(subparsers)
+    sample.register_parser(subparsers)
+    scaffold.register_parser(subparsers)
+    similarity.register_parser(subparsers)
+    split.register_parser(subparsers)
+    standardize.register_parser(subparsers)
+    stats.register_parser(subparsers)
+    validate.register_parser(subparsers)
 
 
 def main(args: Optional[list[str]] = None) -> int:
@@ -143,6 +165,18 @@ def main(args: Optional[list[str]] = None) -> int:
     if parsed_args.command is None:
         parser.print_help()
         return 1
+
+    # Configure logging based on --no-warnings or --log-level
+    from rdkit_cli.utils import configure_all_warnings, set_rdkit_log_level
+    no_warnings = getattr(parsed_args, "no_warnings", False)
+    log_level = getattr(parsed_args, "log_level", None)
+
+    if no_warnings:
+        # Suppress both RDKit and application warnings
+        configure_all_warnings(suppress=True)
+    elif log_level is not None:
+        # Only control RDKit log level
+        set_rdkit_log_level(log_level)
 
     # Each command has a run(args) function via set_defaults(func=...)
     try:

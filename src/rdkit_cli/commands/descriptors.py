@@ -132,6 +132,44 @@ def register_parser(subparsers):
         action="store_true",
         help="Don't include name in output",
     )
+    compute_parser.add_argument(
+        "--add-inchi",
+        action="store_true",
+        help="Add InChI column to output",
+    )
+    compute_parser.add_argument(
+        "--add-inchikey",
+        action="store_true",
+        help="Add InChIKey column to output",
+    )
+    compute_parser.add_argument(
+        "--add-formula",
+        action="store_true",
+        help="Add molecular formula column to output",
+    )
+    compute_parser.add_argument(
+        "--add-canonical",
+        action="store_true",
+        help="Add canonical SMILES column (if input differs)",
+    )
+    compute_parser.add_argument(
+        "--fail-on-error",
+        action="store_true",
+        help="Stop processing on first error instead of continuing",
+    )
+    compute_parser.add_argument(
+        "--skip-invalid",
+        action="store_true",
+        default=True,
+        help="Skip molecules that fail parsing (default: True)",
+    )
+    compute_parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=100,
+        metavar="N",
+        help="Batch size for parallel processing (default: 100)",
+    )
 
     compute_parser.set_defaults(func=run_compute)
 

@@ -11,6 +11,13 @@ from rdkit import Chem
 from rdkit_cli.io.formats import FileFormat, FormatConfig, detect_format
 
 
+def _warn_parse_failed(row_idx: int, smiles: str, max_len: int = 50):
+    """Print a warning for failed SMILES parsing if warnings are enabled."""
+    from rdkit_cli.utils import are_app_warnings_suppressed
+    if not are_app_warnings_suppressed():
+        print(f"Warning: Failed to parse SMILES at row {row_idx}: {smiles[:max_len]}", file=sys.stderr)
+
+
 class MoleculeRecord:
     """A molecule with its associated metadata."""
 
@@ -116,7 +123,7 @@ class CSVReader(MoleculeReader):
                         pass
 
                 if mol is None and smiles:
-                    print(f"Warning: Failed to parse SMILES at row {idx}: {smiles[:50]}", file=sys.stderr)
+                    _warn_parse_failed(idx, smiles)
 
                 yield MoleculeRecord(
                     mol=mol,
@@ -173,7 +180,7 @@ class SMIReader(MoleculeReader):
                         pass
 
                 if mol is None and smiles:
-                    print(f"Warning: Failed to parse SMILES at line {idx + 1}: {smiles[:50]}", file=sys.stderr)
+                    _warn_parse_failed(idx + 1, smiles)
 
                 yield MoleculeRecord(
                     mol=mol,
@@ -217,7 +224,7 @@ class SDFReader(MoleculeReader):
                 name = mol.GetProp("_Name") if mol.HasProp("_Name") else ""
                 smiles = Chem.MolToSmiles(mol)
             else:
-                print(f"Warning: Failed to parse molecule at index {idx}", file=sys.stderr)
+                _warn_parse_failed(idx, "(SDF molecule)")
 
             yield MoleculeRecord(
                 mol=mol,
@@ -273,7 +280,7 @@ class ParquetReader(MoleculeReader):
                         pass
 
                 if mol is None and smiles:
-                    print(f"Warning: Failed to parse SMILES at row {row_idx}: {smiles[:50]}", file=sys.stderr)
+                    _warn_parse_failed(row_idx, smiles)
 
                 yield MoleculeRecord(
                     mol=mol,

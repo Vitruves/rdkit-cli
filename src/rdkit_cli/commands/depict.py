@@ -66,6 +66,55 @@ def register_parser(subparsers):
         choices=["svg", "png"],
         help="Output format (default: from file extension)",
     )
+    single_parser.add_argument(
+        "--highlight",
+        metavar="SMARTS",
+        help="SMARTS pattern to highlight",
+    )
+    single_parser.add_argument(
+        "--highlight-color",
+        default="yellow",
+        help="Highlight color (default: yellow)",
+    )
+    single_parser.add_argument(
+        "--background",
+        default="white",
+        help="Background color (default: white)",
+    )
+    single_parser.add_argument(
+        "--bond-line-width",
+        type=float,
+        default=2.0,
+        help="Bond line width (default: 2.0)",
+    )
+    single_parser.add_argument(
+        "--add-hydrogens",
+        action="store_true",
+        help="Show explicit hydrogens",
+    )
+    single_parser.add_argument(
+        "--kekulize",
+        action="store_true",
+        help="Show Kekule structure (alternating single/double bonds)",
+    )
+    single_parser.add_argument(
+        "--wedge-bonds",
+        action="store_true",
+        default=True,
+        help="Show stereo wedge bonds (default: True)",
+    )
+    single_parser.add_argument(
+        "--no-wedge-bonds",
+        action="store_true",
+        help="Don't show stereo wedge bonds",
+    )
+    single_parser.add_argument(
+        "--rotate",
+        type=float,
+        default=0,
+        metavar="DEG",
+        help="Rotate molecule by degrees",
+    )
     single_parser.set_defaults(func=run_single)
 
     # depict batch
@@ -104,6 +153,36 @@ def register_parser(subparsers):
         type=int,
         default=300,
         help="Image height (default: 300)",
+    )
+    batch_parser.add_argument(
+        "--highlight",
+        metavar="SMARTS",
+        help="SMARTS pattern to highlight in all molecules",
+    )
+    batch_parser.add_argument(
+        "--prefix",
+        default="",
+        help="Filename prefix for output files",
+    )
+    batch_parser.add_argument(
+        "--suffix",
+        default="",
+        help="Filename suffix (before extension)",
+    )
+    batch_parser.add_argument(
+        "--use-index",
+        action="store_true",
+        help="Use index numbers instead of molecule names for filenames",
+    )
+    batch_parser.add_argument(
+        "--add-legend",
+        action="store_true",
+        help="Add molecule name as legend",
+    )
+    batch_parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing files (default: skip)",
     )
     batch_parser.set_defaults(func=run_batch)
 
@@ -149,6 +228,49 @@ def register_parser(subparsers):
         type=int,
         default=100,
         help="Maximum molecules to include (default: 100)",
+    )
+    grid_parser.add_argument(
+        "--highlight",
+        metavar="SMARTS",
+        help="SMARTS pattern to highlight in all molecules",
+    )
+    grid_parser.add_argument(
+        "--show-legends",
+        action="store_true",
+        default=True,
+        help="Show molecule names as legends (default: True)",
+    )
+    grid_parser.add_argument(
+        "--no-legends",
+        action="store_true",
+        help="Don't show legends",
+    )
+    grid_parser.add_argument(
+        "--legend-column",
+        metavar="COL",
+        help="Column to use for legends (default: name column)",
+    )
+    grid_parser.add_argument(
+        "--title",
+        metavar="TEXT",
+        help="Title text to display above grid",
+    )
+    grid_parser.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Skip first N molecules",
+    )
+    grid_parser.add_argument(
+        "--sort-by",
+        metavar="COL",
+        help="Sort molecules by column value",
+    )
+    grid_parser.add_argument(
+        "--sort-desc",
+        action="store_true",
+        help="Sort in descending order",
     )
     grid_parser.set_defaults(func=run_grid)
 

@@ -4,7 +4,7 @@ A comprehensive, high-performance CLI tool wrapping RDKit functionality for chem
 
 ## Features
 
-- **14 Command Categories**: descriptors, fingerprints, filter, convert, standardize, similarity, conformers, reactions, scaffold, enumerate, fragment, diversity, mcs, depict
+- **19 Command Categories**: descriptors, fingerprints, filter, convert, standardize, similarity, conformers, reactions, scaffold, enumerate, fragment, diversity, mcs, depict, stats, split, sample, deduplicate, validate
 - **Multiple Input/Output Formats**: CSV, TSV, SMI, SDF, Parquet
 - **Parallel Processing**: Efficient multi-core support via ProcessPoolExecutor
 - **Ninja-style Progress**: Real-time progress display with speed and ETA
@@ -256,6 +256,93 @@ rdkit-cli depict batch -i molecules.csv -o images/ -f svg
 rdkit-cli depict grid -i molecules.csv -o grid.svg --mols-per-row 4
 ```
 
+### stats
+
+Calculate dataset statistics.
+
+```bash
+# Basic statistics
+rdkit-cli stats -i molecules.csv -o stats.json --format json
+
+# Specific properties
+rdkit-cli stats -i molecules.csv -p MolWt,LogP,TPSA
+
+# List available properties
+rdkit-cli stats -i molecules.csv --list-properties
+```
+
+### split
+
+Split files into smaller chunks.
+
+```bash
+# Split into N files
+rdkit-cli split -i large.csv -o chunks/ -c 10
+
+# Split by chunk size
+rdkit-cli split -i large.csv -o chunks/ -s 1000
+
+# With custom prefix
+rdkit-cli split -i large.csv -o chunks/ -c 5 --prefix molecules
+```
+
+### sample
+
+Randomly sample molecules.
+
+```bash
+# Sample by count
+rdkit-cli sample -i molecules.csv -o sample.csv -k 100 --seed 42
+
+# Sample by fraction
+rdkit-cli sample -i molecules.csv -o sample.csv -f 0.1
+
+# Memory-efficient streaming (reservoir sampling)
+rdkit-cli sample -i huge.csv -o sample.csv -k 1000 --stream
+```
+
+### deduplicate
+
+Remove duplicate molecules.
+
+```bash
+# Deduplicate by canonical SMILES (default)
+rdkit-cli deduplicate -i molecules.csv -o unique.csv
+
+# Deduplicate by InChIKey
+rdkit-cli deduplicate -i molecules.csv -o unique.csv -b inchikey
+
+# Deduplicate by scaffold
+rdkit-cli deduplicate -i molecules.csv -o unique.csv -b scaffold
+
+# Keep last occurrence instead of first
+rdkit-cli deduplicate -i molecules.csv -o unique.csv --keep last
+```
+
+### validate
+
+Validate molecular structures.
+
+```bash
+# Basic validation
+rdkit-cli validate -i molecules.csv -o validated.csv
+
+# Output only valid molecules
+rdkit-cli validate -i molecules.csv -o valid.csv --valid-only
+
+# With constraints
+rdkit-cli validate -i molecules.csv -o validated.csv \
+    --max-atoms 100 --max-rings 8
+
+# Check allowed elements
+rdkit-cli validate -i molecules.csv -o validated.csv \
+    --allowed-elements C,H,N,O,S,F,Cl
+
+# Check stereo and show summary
+rdkit-cli validate -i molecules.csv -o validated.csv \
+    --check-stereo --summary
+```
+
 ## Global Options
 
 | Option | Description |
@@ -285,19 +372,28 @@ rdkit-cli depict grid -i molecules.csv -o grid.svg --mols-per-row 4
 ### Cheminformatics Pipeline
 
 ```bash
-# 1. Standardize input molecules
-rdkit-cli standardize -i raw.csv -o std.csv --cleanup --neutralize
+# 1. Validate and filter input
+rdkit-cli validate -i raw.csv -o validated.csv --valid-only
 
-# 2. Filter by drug-likeness
+# 2. Deduplicate
+rdkit-cli deduplicate -i validated.csv -o unique.csv -b inchikey
+
+# 3. Standardize molecules
+rdkit-cli standardize -i unique.csv -o std.csv --cleanup --neutralize
+
+# 4. Filter by drug-likeness
 rdkit-cli filter druglike -i std.csv -o druglike.csv --rule lipinski
 
-# 3. Compute descriptors
+# 5. Compute descriptors
 rdkit-cli descriptors compute -i druglike.csv -o desc.csv -d MolWt,MolLogP,TPSA,HBD,HBA
 
-# 4. Select diverse subset
+# 6. Get dataset statistics
+rdkit-cli stats -i druglike.csv -o stats.json --format json
+
+# 7. Select diverse subset
 rdkit-cli diversity pick -i druglike.csv -o diverse.csv -k 500
 
-# 5. Generate depictions
+# 8. Generate depictions
 rdkit-cli depict grid -i diverse.csv -o library.svg --mols-per-row 10
 ```
 
@@ -322,6 +418,19 @@ rdkit-cli scaffold murcko -i library.csv -o scaffolds.csv
 
 # Analyze scaffold diversity
 rdkit-cli diversity analyze -i scaffolds.csv --smiles-column scaffold
+```
+
+### Large Dataset Processing
+
+```bash
+# Sample from a huge dataset
+rdkit-cli sample -i huge_library.csv -o sample.csv -k 10000 --stream
+
+# Split for parallel processing
+rdkit-cli split -i library.csv -o batches/ -c 10
+
+# Process batches in parallel (using xargs)
+ls batches/*.csv | xargs -P 4 -I {} rdkit-cli descriptors compute -i {} -o {}.desc.csv -d MolWt,LogP
 ```
 
 ## Development

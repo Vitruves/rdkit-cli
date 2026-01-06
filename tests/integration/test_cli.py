@@ -82,6 +82,19 @@ class TestFilterCommand:
         assert result.returncode == 0
         assert output_csv.exists()
 
+    def test_filter_substructure_exclude(self, sample_csv, output_csv):
+        """Test substructure filtering with exclude mode."""
+        result = run_cli([
+            "filter", "substructure",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--smarts", "c1ccccc1",
+            "--exclude",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
     def test_filter_druglike(self, sample_csv, output_csv):
         """Test drug-likeness filtering."""
         result = run_cli([
@@ -89,6 +102,154 @@ class TestFilterCommand:
             "-i", str(sample_csv),
             "-o", str(output_csv),
             "--rule", "lipinski",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_druglike_veber(self, sample_csv, output_csv):
+        """Test drug-likeness filtering with Veber rule."""
+        result = run_cli([
+            "filter", "druglike",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--rule", "veber",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_druglike_with_violations(self, sample_csv, output_csv):
+        """Test drug-likeness filtering with max violations."""
+        result = run_cli([
+            "filter", "druglike",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--rule", "lipinski",
+            "--max-violations", "1",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_pains(self, sample_csv, output_csv):
+        """Test PAINS filtering."""
+        result = run_cli([
+            "filter", "pains",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_pains_keep(self, sample_csv, output_csv):
+        """Test PAINS filtering with keep-pains mode."""
+        result = run_cli([
+            "filter", "pains",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--keep-pains",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_elements(self, sample_csv, output_csv):
+        """Test element filtering."""
+        result = run_cli([
+            "filter", "elements",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--allowed", "C,H,N,O",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_elements_required(self, sample_csv, output_csv):
+        """Test element filtering with required elements."""
+        result = run_cli([
+            "filter", "elements",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--required", "N",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_elements_forbidden(self, sample_csv, output_csv):
+        """Test element filtering with forbidden elements."""
+        result = run_cli([
+            "filter", "elements",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--forbidden", "S,P",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_complexity(self, sample_csv, output_csv):
+        """Test complexity filtering."""
+        result = run_cli([
+            "filter", "complexity",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--min-atoms", "5",
+            "--max-atoms", "50",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_complexity_rings(self, sample_csv, output_csv):
+        """Test complexity filtering by ring count."""
+        result = run_cli([
+            "filter", "complexity",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--min-rings", "1",
+            "--max-rings", "3",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_complexity_rotatable(self, sample_csv, output_csv):
+        """Test complexity filtering by rotatable bonds."""
+        result = run_cli([
+            "filter", "complexity",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--min-rotatable", "0",
+            "--max-rotatable", "5",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_property(self, sample_csv, output_csv):
+        """Test property filtering."""
+        result = run_cli([
+            "filter", "property",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--rule", "MolWt<500",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_filter_property_multiple_rules(self, sample_csv, output_csv):
+        """Test property filtering with multiple rules."""
+        result = run_cli([
+            "filter", "property",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--rule", "MolWt<500",
+            "--rule", "MolLogP<5",
             "-q",
         ])
         assert result.returncode == 0
@@ -432,3 +593,243 @@ class TestReactionsCommand:
         ])
         assert result.returncode == 0
         assert output_csv.exists()
+
+
+class TestStatsCommand:
+    """Test stats command."""
+
+    def test_stats_basic(self, sample_csv, output_csv):
+        """Test basic stats calculation."""
+        result = run_cli([
+            "stats",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_stats_list_properties(self):
+        """Test listing available properties."""
+        result = run_cli(["stats", "-i", "dummy.csv", "--list-properties"])
+        assert result.returncode == 0
+        assert "MolWt" in result.stdout
+
+    def test_stats_specific_properties(self, sample_csv, output_csv):
+        """Test with specific properties."""
+        result = run_cli([
+            "stats",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "-p", "MolWt,LogP",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_stats_json_format(self, sample_csv, output_csv):
+        """Test JSON output format."""
+        result = run_cli([
+            "stats",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--format", "json",
+            "-q",
+        ])
+        assert result.returncode == 0
+        content = output_csv.read_text()
+        assert "{" in content  # JSON format
+
+
+class TestSplitCommand:
+    """Test split command."""
+
+    def test_split_by_chunks(self, sample_csv, output_dir):
+        """Test splitting by number of chunks."""
+        result = run_cli([
+            "split",
+            "-i", str(sample_csv),
+            "-o", str(output_dir),
+            "-c", "2",
+            "-q",
+        ])
+        assert result.returncode == 0
+        csv_files = list(output_dir.glob("*.csv"))
+        assert len(csv_files) == 2
+
+    def test_split_by_size(self, sample_csv, output_dir):
+        """Test splitting by chunk size."""
+        result = run_cli([
+            "split",
+            "-i", str(sample_csv),
+            "-o", str(output_dir),
+            "-s", "2",
+            "-q",
+        ])
+        assert result.returncode == 0
+        csv_files = list(output_dir.glob("*.csv"))
+        assert len(csv_files) >= 2
+
+    def test_split_with_prefix(self, sample_csv, output_dir):
+        """Test splitting with custom prefix."""
+        result = run_cli([
+            "split",
+            "-i", str(sample_csv),
+            "-o", str(output_dir),
+            "-c", "2",
+            "--prefix", "molecules",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert any("molecules" in f.name for f in output_dir.glob("*.csv"))
+
+
+class TestSampleCommand:
+    """Test sample command."""
+
+    def test_sample_by_count(self, sample_csv, output_csv):
+        """Test sampling by count."""
+        result = run_cli([
+            "sample",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "-k", "3",
+            "--seed", "42",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+        # Count lines (minus header)
+        lines = output_csv.read_text().strip().split("\n")
+        assert len(lines) == 4  # 1 header + 3 samples
+
+    def test_sample_by_fraction(self, sample_csv, output_csv):
+        """Test sampling by fraction."""
+        result = run_cli([
+            "sample",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "-f", "0.5",
+            "--seed", "42",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_sample_stream_mode(self, sample_csv, output_csv):
+        """Test stream (reservoir) sampling."""
+        result = run_cli([
+            "sample",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "-k", "2",
+            "--stream",
+            "--seed", "42",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+
+class TestDeduplicateCommand:
+    """Test deduplicate command."""
+
+    def test_deduplicate_basic(self, sample_csv, output_csv):
+        """Test basic deduplication."""
+        result = run_cli([
+            "deduplicate",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_deduplicate_by_inchikey(self, sample_csv, output_csv):
+        """Test deduplication by InChIKey."""
+        result = run_cli([
+            "deduplicate",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "-b", "inchikey",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_deduplicate_list_keys(self):
+        """Test listing available key types."""
+        result = run_cli(["deduplicate", "-i", "dummy.csv", "-o", "out.csv", "--list-keys"])
+        assert result.returncode == 0
+        assert "smiles" in result.stdout
+        assert "inchikey" in result.stdout
+
+
+class TestValidateCommand:
+    """Test validate command."""
+
+    def test_validate_basic(self, sample_csv, output_csv):
+        """Test basic validation."""
+        result = run_cli([
+            "validate",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+        content = output_csv.read_text()
+        assert "is_valid" in content
+
+    def test_validate_valid_only(self, sample_csv, output_csv):
+        """Test outputting only valid molecules."""
+        result = run_cli([
+            "validate",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--valid-only",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+        content = output_csv.read_text()
+        assert "is_valid" not in content  # No validation columns
+
+    def test_validate_with_constraints(self, sample_csv, output_csv):
+        """Test validation with constraints."""
+        result = run_cli([
+            "validate",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--max-atoms", "50",
+            "--max-rings", "5",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_validate_allowed_elements(self, sample_csv, output_csv):
+        """Test validation with element constraints."""
+        result = run_cli([
+            "validate",
+            "-i", str(sample_csv),
+            "-o", str(output_csv),
+            "--allowed-elements", "C,H,N,O,S",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+
+    def test_validate_with_invalid_molecules(self, sample_csv_with_invalid, output_csv):
+        """Test validation with some invalid molecules."""
+        result = run_cli([
+            "validate",
+            "-i", str(sample_csv_with_invalid),
+            "-o", str(output_csv),
+            "--summary",
+            "-q",
+        ])
+        assert result.returncode == 0
+        assert output_csv.exists()
+        # Check summary was printed
+        assert "Invalid:" in result.stderr

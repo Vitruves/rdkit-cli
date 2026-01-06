@@ -69,6 +69,67 @@ def register_parser(subparsers):
         action="store_true",
         help="Include original SMILES in output",
     )
+    parser.add_argument(
+        "--isomeric",
+        action="store_true",
+        default=True,
+        help="Output isomeric SMILES (default: True)",
+    )
+    parser.add_argument(
+        "--no-isomeric",
+        action="store_true",
+        help="Remove stereochemistry from output SMILES",
+    )
+    parser.add_argument(
+        "--kekule",
+        action="store_true",
+        help="Output Kekule SMILES (no aromaticity)",
+    )
+    parser.add_argument(
+        "--add-hydrogens",
+        action="store_true",
+        help="Add explicit hydrogens to output",
+    )
+    parser.add_argument(
+        "--remove-hydrogens",
+        action="store_true",
+        help="Remove explicit hydrogens from output",
+    )
+    parser.add_argument(
+        "--add-inchi",
+        action="store_true",
+        help="Add InChI to output",
+    )
+    parser.add_argument(
+        "--add-inchikey",
+        action="store_true",
+        help="Add InChIKey to output",
+    )
+    parser.add_argument(
+        "--add-formula",
+        action="store_true",
+        help="Add molecular formula to output",
+    )
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="Validate molecules and report issues",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Strict validation mode - reject molecules with any issues",
+    )
+    parser.add_argument(
+        "--salt-strip",
+        action="store_true",
+        help="Remove common salt counterions",
+    )
+    parser.add_argument(
+        "--remove-isotopes",
+        action="store_true",
+        help="Remove isotope labels",
+    )
 
     parser.set_defaults(func=run_standardize)
 
