@@ -4,7 +4,7 @@ A comprehensive, high-performance CLI tool wrapping RDKit functionality for chem
 
 ## Features
 
-- **19 Command Categories**: descriptors, fingerprints, filter, convert, standardize, similarity, conformers, reactions, scaffold, enumerate, fragment, diversity, mcs, depict, stats, split, sample, deduplicate, validate
+- **29 Command Categories**: align, conformers, convert, deduplicate, depict, descriptors, diversity, enumerate, filter, fingerprints, fragment, info, mcs, merge, mmp, props, protonate, reactions, rgroup, rings, rmsd, sample, sascorer, scaffold, similarity, split, standardize, stats, validate
 - **Multiple Input/Output Formats**: CSV, TSV, SMI, SDF, Parquet
 - **Parallel Processing**: Efficient multi-core support via ProcessPoolExecutor
 - **Ninja-style Progress**: Real-time progress display with speed and ETA
@@ -341,6 +341,160 @@ rdkit-cli validate -i molecules.csv -o validated.csv \
 # Check stereo and show summary
 rdkit-cli validate -i molecules.csv -o validated.csv \
     --check-stereo --summary
+```
+
+### info
+
+Quick molecule information from SMILES.
+
+```bash
+# Basic info
+rdkit-cli info "CCO"
+
+# JSON output
+rdkit-cli info "c1ccccc1" --json
+
+# Shows: formula, MW, LogP, TPSA, stereocenters, Lipinski violations, InChI/InChIKey
+```
+
+### merge
+
+Combine multiple molecule files.
+
+```bash
+# Merge two files
+rdkit-cli merge -i file1.csv file2.csv -o merged.csv
+
+# Merge with deduplication
+rdkit-cli merge -i file1.csv file2.csv -o merged.csv --dedupe
+
+# Track source file
+rdkit-cli merge -i file1.csv file2.csv -o merged.csv --source-column source
+```
+
+### sascorer
+
+Calculate synthetic accessibility and drug-likeness scores.
+
+```bash
+# SA Score only (default)
+rdkit-cli sascorer -i molecules.csv -o scores.csv
+
+# Include QED score
+rdkit-cli sascorer -i molecules.csv -o scores.csv --qed
+
+# Include Natural Product-likeness score
+rdkit-cli sascorer -i molecules.csv -o scores.csv --npc
+
+# All scores
+rdkit-cli sascorer -i molecules.csv -o scores.csv --qed --npc
+```
+
+### rgroup
+
+R-group decomposition around a core structure.
+
+```bash
+# Decompose around benzene core
+rdkit-cli rgroup -i molecules.csv -o decomposed.csv --core "c1ccc([*:1])cc1"
+
+# Multiple attachment points
+rdkit-cli rgroup -i molecules.csv -o decomposed.csv \
+    --core "c1ccc([*:1])cc([*:2])1"
+```
+
+### rings
+
+Ring system analysis.
+
+```bash
+# Extract ring systems
+rdkit-cli rings extract -i molecules.csv -o rings.csv
+
+# Ring information (counts, sizes, aromaticity)
+rdkit-cli rings info -i molecules.csv -o ring_info.csv
+
+# Frequency analysis
+rdkit-cli rings frequency -i molecules.csv -o ring_freq.csv
+```
+
+### align
+
+3D molecular alignment.
+
+```bash
+# Align to reference structure (MCS-based)
+rdkit-cli align -i probes.sdf -o aligned.sdf -r reference.sdf
+
+# Open3DAlign method
+rdkit-cli align -i probes.sdf -o aligned.sdf -r reference.sdf --method o3a
+```
+
+### rmsd
+
+RMSD calculations between 3D structures.
+
+```bash
+# Compare to reference
+rdkit-cli rmsd compare -i molecules.sdf -o results.csv -r reference.sdf
+
+# Pairwise RMSD matrix
+rdkit-cli rmsd matrix -i molecules.sdf -o matrix.csv
+
+# Conformer RMSD analysis
+rdkit-cli rmsd conformers -i multi_conf.sdf -o conf_rmsd.csv
+```
+
+### mmp
+
+Matched Molecular Pairs analysis.
+
+```bash
+# Fragment molecules for MMP
+rdkit-cli mmp fragment -i molecules.csv -o fragments.csv
+
+# Find matched pairs
+rdkit-cli mmp pairs -i fragments.csv -o pairs.csv
+
+# Apply MMP transformation
+rdkit-cli mmp transform -i molecules.csv -o transformed.csv \
+    -t "[c:1][CH3]>>[c:1][NH2]"
+```
+
+### protonate
+
+Protonation state enumeration.
+
+```bash
+# Enumerate at physiological pH
+rdkit-cli protonate -i molecules.csv -o protonated.csv --ph 7.4
+
+# Neutralize charged molecules
+rdkit-cli protonate -i molecules.csv -o neutral.csv --neutralize
+
+# Enumerate all states
+rdkit-cli protonate -i molecules.csv -o states.csv --enumerate-all
+```
+
+### props
+
+Property column operations.
+
+```bash
+# Add a column
+rdkit-cli props add -i molecules.csv -o output.csv -c series -v "series_A"
+
+# Rename a column
+rdkit-cli props rename -i molecules.csv -o output.csv --from name --to mol_name
+
+# Drop columns
+rdkit-cli props drop -i molecules.csv -o output.csv -c col1,col2
+
+# Keep only specific columns
+rdkit-cli props keep -i molecules.csv -o output.csv -c smiles,name,MolWt
+
+# List columns
+rdkit-cli props list -i molecules.csv
 ```
 
 ## Global Options

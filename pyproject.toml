@@ -1,12 +1,12 @@
 [project]
 name = "rdkit-cli"
-version = "0.2.0"
+version = "0.3.0"
 description = "A comprehensive CLI tool for RDKit cheminformatics operations"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [
-    { name = "Vitruves" }
+    { name = "Johan HG Natter" }
 ]
 keywords = [
     "rdkit",

@@ -2,11 +2,36 @@
 
 import argparse
 import sys
+from difflib import get_close_matches
 from typing import Optional
 
 from rich_argparse import RichHelpFormatter
 
 from rdkit_cli import __version__
+
+
+class SuggestingArgumentParser(argparse.ArgumentParser):
+    """ArgumentParser with 'did you mean?' suggestions for typos."""
+
+    def error(self, message: str) -> None:
+        """Override error to add command suggestions."""
+        if "invalid choice:" in message and "(choose from" in message:
+            # Extract the invalid choice and valid choices
+            import re
+            match = re.search(r"invalid choice: '([^']+)'.*choose from (.+)\)", message)
+            if match:
+                invalid = match.group(1)
+                choices_str = match.group(2)
+                choices = [c.strip().strip("'") for c in choices_str.split(",")]
+
+                # Find close matches
+                suggestions = get_close_matches(invalid, choices, n=1, cutoff=0.5)
+                if suggestions:
+                    message = f"unknown command '{invalid}'. Did you mean '{suggestions[0]}'?"
+
+        self.print_usage(sys.stderr)
+        sys.stderr.write(f"{self.prog}: error: {message}\n")
+        sys.exit(2)
 
 
 class RdkitHelpFormatter(RichHelpFormatter):
@@ -82,9 +107,9 @@ def add_common_processing_options(parser: argparse.ArgumentParser):
     )
 
 
-def create_parser() -> argparse.ArgumentParser:
+def create_parser() -> SuggestingArgumentParser:
     """Create the main argument parser."""
-    parser = argparse.ArgumentParser(
+    parser = SuggestingArgumentParser(
         prog="rdkit-cli",
         description="A comprehensive CLI tool for RDKit cheminformatics operations.",
         epilog="Use 'rdkit-cli <command> --help' for command-specific help.",
@@ -114,6 +139,7 @@ def create_parser() -> argparse.ArgumentParser:
 def _register_commands(subparsers):
     """Register all command subparsers (alphabetical order)."""
     from rdkit_cli.commands import (
+        align,
         conformers,
         convert,
         deduplicate,
@@ -124,9 +150,18 @@ def _register_commands(subparsers):
         filter,
         fingerprints,
         fragment,
+        info,
         mcs,
+        merge,
+        mmp,
+        props,
+        protonate,
         reactions,
+        rgroup,
+        rings,
+        rmsd,
         sample,
+        sascorer,
         scaffold,
         similarity,
         split,
@@ -136,6 +171,7 @@ def _register_commands(subparsers):
     )
 
     # Each module has a register_parser(subparsers) function
+    align.register_parser(subparsers)
     conformers.register_parser(subparsers)
     convert.register_parser(subparsers)
     deduplicate.register_parser(subparsers)
@@ -146,9 +182,18 @@ def _register_commands(subparsers):
     filter.register_parser(subparsers)
     fingerprints.register_parser(subparsers)
     fragment.register_parser(subparsers)
+    info.register_parser(subparsers)
     mcs.register_parser(subparsers)
+    merge.register_parser(subparsers)
+    mmp.register_parser(subparsers)
+    props.register_parser(subparsers)
+    protonate.register_parser(subparsers)
     reactions.register_parser(subparsers)
+    rgroup.register_parser(subparsers)
+    rings.register_parser(subparsers)
+    rmsd.register_parser(subparsers)
     sample.register_parser(subparsers)
+    sascorer.register_parser(subparsers)
     scaffold.register_parser(subparsers)
     similarity.register_parser(subparsers)
     split.register_parser(subparsers)

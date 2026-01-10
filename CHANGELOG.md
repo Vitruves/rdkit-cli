@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-01-10
+
+### Added
+
+- **info**: Quick molecule information from SMILES (formula, MW, LogP, TPSA, stereocenters, Lipinski violations, InChI/InChIKey)
+- **merge**: Combine multiple molecule files with optional deduplication and source tracking
+- **sascorer**: Calculate Synthetic Accessibility (SA) Score, Natural Product-likeness (NPC), and QED scores
+- **rgroup**: R-group decomposition around a core SMARTS pattern with labeled attachment points
+- **rings**: Ring system analysis - extract ring systems (fused, spiro, bridged) and analyze frequencies
+- **align**: 3D molecular alignment to a reference structure (MCS-based or Open3DAlign)
+- **rmsd**: RMSD calculations between 3D structures (compare to reference, pairwise matrix, conformer analysis)
+- **mmp**: Matched Molecular Pairs analysis - fragment molecules, find pairs, apply transformations
+- **protonate**: Protonation state enumeration at specified pH with neutralization option
+- **props**: Property column operations - add, rename, drop, keep columns in molecule files
+
+### Changed
+
+- Total command count increased from 19 to 29
+
 ## [0.2.0] - 2026-01-06
 
 ### Added
