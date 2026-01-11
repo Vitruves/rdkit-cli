@@ -1,5 +1,10 @@
 # rdkit-cli
 
+[![PyPI version](https://img.shields.io/pypi/v/rdkit-cli.svg)](https://pypi.org/project/rdkit-cli/)
+[![Python versions](https://img.shields.io/pypi/pyversions/rdkit-cli.svg)](https://pypi.org/project/rdkit-cli/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/rdkit-cli?period=total&units=international_system&left_color=black&right_color=green&left_text=downloads)](https://pepy.tech/projects/rdkit-cli)
+[![License](https://img.shields.io/pypi/l/rdkit-cli.svg)](https://github.com/vitruves/rdkit-cli/blob/main/LICENSE)
+
 A comprehensive, high-performance CLI tool wrapping RDKit functionality for cheminformatics workflows.
 
 ## Features
