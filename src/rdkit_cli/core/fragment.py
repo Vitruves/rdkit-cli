@@ -159,8 +159,7 @@ class FunctionalGroupExtractor:
         """
         self.include_smiles = include_smiles
         self.include_name = include_name
-        # Use RDKit's functional group hierarchy
-        self._fgs = rdMolDescriptors.GetMorganFingerprint
+        # Functional group extraction via SMARTS patterns below
 
     def extract(self, record: MoleculeRecord) -> Optional[dict[str, Any]]:
         """

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-03-14
+
+### Changed
+
+- **Migrated to MorganGenerator API**: replaced deprecated `GetMorganFingerprintAsBitVect` / `GetHashedMorganFingerprint` with `rdFingerprintGenerator.GetMorganGenerator` across fingerprints, similarity, diversity, and sascorer modules. Also migrated AtomPair and TopologicalTorsion fingerprints.
+- **Smart parallelism defaults**: global default changed from all cores (`-1`) to single-threaded (`1`), avoiding IPC overhead on fast commands. Heavy workloads (`descriptors --all`, `descriptors --category`) auto-scale to all cores. Users can always override with `-n -1`.
+- **Optimized README**: replaced verbose per-command docs with compact help-style reference and benchmark table. Full command docs moved to `docs/commands.md`.
+
+### Removed
+
+- Dead `_fgs` reference in fragment module (unused `GetMorganFingerprint` assignment)
+
 ## [0.3.0] - 2026-01-10
 
 ### Added

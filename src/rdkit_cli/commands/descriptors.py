@@ -236,6 +236,11 @@ def run_compute(args) -> int:
         exclude_set = {d.strip() for d in args.exclude.split(",")}
         descriptor_names = [d for d in descriptor_names if d not in exclude_set]
 
+    # Auto-enable parallel processing for heavy workloads
+    if args.ncpu == 1 and (args.compute_all or args.compute_category):
+        import os
+        args.ncpu = os.cpu_count() or 1
+
     # Create calculator
     try:
         calculator = DescriptorCalculator(

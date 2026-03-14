@@ -4,12 +4,14 @@ from typing import Optional, Any
 
 from rdkit import Chem, DataStructs
 from rdkit.Chem import rdMolDescriptors
+from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator
 from rdkit.SimDivFilters import rdSimDivPickers
 
 
 def get_morgan_fingerprint(mol: Chem.Mol, radius: int = 2, n_bits: int = 2048):
     """Get Morgan fingerprint for a molecule."""
-    return rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, radius, nBits=n_bits)
+    gen = GetMorganGenerator(radius=radius, fpSize=n_bits)
+    return gen.GetFingerprint(mol)
 
 
 class DiversityPicker:

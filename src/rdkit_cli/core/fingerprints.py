@@ -6,6 +6,11 @@ from typing import Optional, Any
 
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem, MACCSkeys, rdMolDescriptors
+from rdkit.Chem.rdFingerprintGenerator import (
+    GetMorganGenerator,
+    GetAtomPairGenerator,
+    GetTopologicalTorsionGenerator,
+)
 
 from rdkit_cli.io.readers import MoleculeRecord
 
@@ -98,14 +103,11 @@ def compute_fingerprint(
     """
     try:
         if fp_type == FingerprintType.MORGAN:
+            gen = GetMorganGenerator(radius=radius, fpSize=n_bits)
             if use_counts:
-                return rdMolDescriptors.GetHashedMorganFingerprint(
-                    mol, radius, nBits=n_bits
-                )
+                return gen.GetCountFingerprint(mol)
             else:
-                return rdMolDescriptors.GetMorganFingerprintAsBitVect(
-                    mol, radius, nBits=n_bits
-                )
+                return gen.GetFingerprint(mol)
 
         elif fp_type == FingerprintType.MACCS:
             return MACCSkeys.GenMACCSKeys(mol)
@@ -114,14 +116,12 @@ def compute_fingerprint(
             return Chem.RDKFingerprint(mol, fpSize=n_bits)
 
         elif fp_type == FingerprintType.ATOMPAIR:
-            return rdMolDescriptors.GetHashedAtomPairFingerprintAsBitVect(
-                mol, nBits=n_bits
-            )
+            gen = GetAtomPairGenerator(fpSize=n_bits)
+            return gen.GetFingerprint(mol)
 
         elif fp_type == FingerprintType.TORSION:
-            return rdMolDescriptors.GetHashedTopologicalTorsionFingerprintAsBitVect(
-                mol, nBits=n_bits
-            )
+            gen = GetTopologicalTorsionGenerator(fpSize=n_bits)
+            return gen.GetFingerprint(mol)
 
         elif fp_type == FingerprintType.PATTERN:
             return Chem.PatternFingerprint(mol, fpSize=n_bits)

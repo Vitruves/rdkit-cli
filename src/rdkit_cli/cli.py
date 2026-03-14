@@ -67,9 +67,9 @@ def add_common_processing_options(parser: argparse.ArgumentParser):
     parser.add_argument(
         "-n", "--ncpu",
         type=int,
-        default=-1,
+        default=1,
         metavar="N",
-        help="Number of CPU cores (-1 for all, default: -1)",
+        help="Number of CPU cores (-1 for all, default: 1)",
     )
     parser.add_argument(
         "--smiles-column",

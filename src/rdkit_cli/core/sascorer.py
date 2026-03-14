@@ -70,7 +70,9 @@ def calculate_sa_score(mol) -> Optional[float]:
         fscores = _load_fragment_scores()
 
         # Calculate Morgan fingerprint fragments
-        fp = rdMolDescriptors.GetMorganFingerprint(mol, 2)
+        from rdkit.Chem.rdFingerprintGenerator import GetMorganGenerator
+        gen = GetMorganGenerator(radius=2)
+        fp = gen.GetSparseCountFingerprint(mol)
         fps = fp.GetNonzeroElements()
 
         # Fragment score
