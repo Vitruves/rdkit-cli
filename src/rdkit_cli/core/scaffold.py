@@ -172,3 +172,57 @@ def analyze_scaffolds(
         results.append((scaffold, count, round(percentage, 2)))
 
     return results
+
+
+def build_scaffold_network(
+    mols: list[Chem.Mol],
+) -> dict[str, Any]:
+    """
+    Build a scaffold network from a list of molecules.
+
+    Args:
+        mols: List of RDKit molecules
+
+    Returns:
+        Dictionary with nodes (scaffolds) and edges
+    """
+    from rdkit.Chem.Scaffolds import rdScaffoldNetwork
+
+    params = rdScaffoldNetwork.ScaffoldNetworkParams()
+    params.includeGenericScaffolds = True
+    params.includeGenericBondScaffolds = False
+
+    valid_mols = [m for m in mols if m is not None]
+    if not valid_mols:
+        return {"nodes": [], "edges": [], "counts": {}}
+
+    net = rdScaffoldNetwork.CreateScaffoldNetwork(valid_mols, params)
+
+    nodes = list(net.nodes)
+    edges = []
+    for edge in net.edges:
+        edges.append({
+            "begin": edge.beginIdx,
+            "end": edge.endIdx,
+            "type": str(edge.type),
+        })
+
+    # Count how many input molecules contain each scaffold
+    node_counts = {}
+    for i, node_smi in enumerate(nodes):
+        node_mol = Chem.MolFromSmiles(node_smi)
+        if node_mol is None:
+            node_counts[i] = 0
+            continue
+        count = sum(
+            1 for m in valid_mols
+            if m.HasSubstructMatch(node_mol)
+        )
+        node_counts[i] = count
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "counts": node_counts,
+        "num_molecules": len(valid_mols),
+    }

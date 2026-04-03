@@ -11,6 +11,9 @@ from rdkit.Chem.rdFingerprintGenerator import (
     GetAtomPairGenerator,
     GetTopologicalTorsionGenerator,
 )
+from rdkit.Avalon import pyAvalonTools
+from rdkit.Chem import rdMHFPFingerprint
+from rdkit.Chem.Pharm2D import Gobbi_Pharm2D, Generate
 
 from rdkit_cli.io.readers import MoleculeRecord
 
@@ -24,6 +27,9 @@ class FingerprintType(Enum):
     ATOMPAIR = "atompair"
     TORSION = "torsion"
     PATTERN = "pattern"
+    AVALON = "avalon"
+    MHFP = "mhfp"
+    PHARMACOPHORE = "pharmacophore"
 
 
 @dataclass
@@ -71,6 +77,24 @@ FINGERPRINT_INFO: dict[FingerprintType, FingerprintInfo] = {
         name="pattern",
         description="SMARTS pattern fingerprints (for screening)",
         default_bits=2048,
+        has_radius=False,
+    ),
+    FingerprintType.AVALON: FingerprintInfo(
+        name="avalon",
+        description="Avalon toolkit fingerprints",
+        default_bits=512,
+        has_radius=False,
+    ),
+    FingerprintType.MHFP: FingerprintInfo(
+        name="mhfp",
+        description="MinHash fingerprints (MHFP6)",
+        default_bits=2048,
+        has_radius=True,
+    ),
+    FingerprintType.PHARMACOPHORE: FingerprintInfo(
+        name="pharmacophore",
+        description="2D pharmacophore (Gobbi) fingerprints",
+        default_bits=39972,
         has_radius=False,
     ),
 }
@@ -125,6 +149,16 @@ def compute_fingerprint(
 
         elif fp_type == FingerprintType.PATTERN:
             return Chem.PatternFingerprint(mol, fpSize=n_bits)
+
+        elif fp_type == FingerprintType.AVALON:
+            return pyAvalonTools.GetAvalonFP(mol, nBits=n_bits)
+
+        elif fp_type == FingerprintType.MHFP:
+            encoder = rdMHFPFingerprint.MHFPEncoder(n_bits)
+            return encoder.EncodeSECFPMol(mol, radius=radius, length=n_bits)
+
+        elif fp_type == FingerprintType.PHARMACOPHORE:
+            return Generate.Gen2DFingerprint(mol, Gobbi_Pharm2D.factory)
 
         else:
             raise ValueError(f"Unknown fingerprint type: {fp_type}")
@@ -199,9 +233,11 @@ class FingerprintCalculator:
         self.include_smiles = include_smiles
         self.include_name = include_name
 
-        # Override n_bits for MACCS
+        # Override n_bits for fixed-size fingerprints
         if fp_type == FingerprintType.MACCS:
             self.n_bits = 167
+        elif fp_type == FingerprintType.PHARMACOPHORE:
+            self.n_bits = 39972
 
     def compute(self, record: MoleculeRecord) -> Optional[dict[str, Any]]:
         """

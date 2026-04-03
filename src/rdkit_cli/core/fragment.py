@@ -234,3 +234,41 @@ def analyze_fragments(fragments: list[str], top_n: int = 20) -> list[tuple[str, 
         results.append((frag, count, round(percentage, 2)))
 
     return results
+
+
+def brics_build(
+    fragment_smiles: list[str],
+    max_molecules: int = 1000,
+) -> list[str]:
+    """
+    Recombine BRICS fragments to generate new molecules.
+
+    Args:
+        fragment_smiles: List of BRICS fragment SMILES
+        max_molecules: Maximum molecules to generate
+
+    Returns:
+        List of product SMILES
+    """
+    frags = []
+    for smi in fragment_smiles:
+        mol = Chem.MolFromSmiles(smi)
+        if mol is not None:
+            frags.append(mol)
+
+    if not frags:
+        return []
+
+    builder = BRICS.BRICSBuild(frags)
+    products = []
+    for i, mol in enumerate(builder):
+        if i >= max_molecules:
+            break
+        try:
+            Chem.SanitizeMol(mol)
+            smi = Chem.MolToSmiles(mol)
+            products.append(smi)
+        except Exception:
+            continue
+
+    return products

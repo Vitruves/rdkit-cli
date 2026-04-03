@@ -146,6 +146,7 @@ def _register_commands(subparsers):
         depict,
         descriptors,
         diversity,
+        energy,
         enumerate,
         filter,
         fingerprints,
@@ -154,6 +155,7 @@ def _register_commands(subparsers):
         mcs,
         merge,
         mmp,
+        pharmacophore,
         props,
         protonate,
         reactions,
@@ -167,6 +169,7 @@ def _register_commands(subparsers):
         split,
         standardize,
         stats,
+        stereo,
         validate,
     )
 
@@ -178,6 +181,7 @@ def _register_commands(subparsers):
     depict.register_parser(subparsers)
     descriptors.register_parser(subparsers)
     diversity.register_parser(subparsers)
+    energy.register_parser(subparsers)
     enumerate.register_parser(subparsers)
     filter.register_parser(subparsers)
     fingerprints.register_parser(subparsers)
@@ -186,6 +190,7 @@ def _register_commands(subparsers):
     mcs.register_parser(subparsers)
     merge.register_parser(subparsers)
     mmp.register_parser(subparsers)
+    pharmacophore.register_parser(subparsers)
     props.register_parser(subparsers)
     protonate.register_parser(subparsers)
     reactions.register_parser(subparsers)
@@ -199,6 +204,7 @@ def _register_commands(subparsers):
     split.register_parser(subparsers)
     standardize.register_parser(subparsers)
     stats.register_parser(subparsers)
+    stereo.register_parser(subparsers)
     validate.register_parser(subparsers)
 
 

@@ -1,6 +1,6 @@
 [project]
 name = "rdkit-cli"
-version = "0.3.1"
+version = "0.3.2"
 description = "A comprehensive CLI tool for RDKit cheminformatics operations"
 readme = "README.md"
 license = "Apache-2.0"

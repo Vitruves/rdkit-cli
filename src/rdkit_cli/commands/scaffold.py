@@ -96,6 +96,49 @@ def register_parser(subparsers):
     )
     analyze_parser.set_defaults(func=run_analyze)
 
+    # scaffold network
+    network_parser = scaf_subparsers.add_parser(
+        "network",
+        help="Build scaffold network from molecules",
+        formatter_class=RdkitHelpFormatter,
+    )
+    network_parser.add_argument(
+        "-i", "--input",
+        required=True,
+        metavar="FILE",
+        help="Input file with molecules",
+    )
+    network_parser.add_argument(
+        "-o", "--output",
+        required=True,
+        metavar="FILE",
+        help="Output file (CSV with nodes/edges, or JSON)",
+    )
+    network_parser.add_argument(
+        "--smiles-column",
+        default="smiles",
+        metavar="COL",
+        help="Name of SMILES column (default: smiles)",
+    )
+    network_parser.add_argument(
+        "--no-header",
+        action="store_true",
+        help="Input file has no header row",
+    )
+    network_parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Suppress progress output",
+    )
+    network_parser.add_argument(
+        "-f", "--format",
+        choices=["csv", "json"],
+        default="csv",
+        dest="output_format",
+        help="Output format (default: csv)",
+    )
+    network_parser.set_defaults(func=run_network)
+
     # Set default for main parser
     parser.set_defaults(func=lambda args: parser.print_help() or 1)
 
@@ -238,6 +281,65 @@ def run_analyze(args) -> int:
     else:
         print(output_text)
 
-    print(f"\nTotal scaffolds: {len(scaffolds)}, Unique: {len(set(scaffolds))}", file=sys.stderr)
+    print(
+        f"\nTotal scaffolds: {len(scaffolds)}, "
+        f"Unique: {len(set(scaffolds))}",
+        file=sys.stderr,
+    )
+
+    return 0
+
+
+def run_network(args) -> int:
+    """Build scaffold network."""
+    import json
+    from rdkit_cli.core.scaffold import build_scaffold_network
+    from rdkit_cli.io import create_reader
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"Error: Input file not found: {input_path}", file=sys.stderr)
+        return 1
+
+    reader = create_reader(
+        input_path,
+        smiles_column=args.smiles_column,
+        has_header=not args.no_header,
+    )
+
+    if not args.quiet:
+        print("Reading molecules...", file=sys.stderr)
+
+    records = list(reader)
+    mols = [r.mol for r in records if r.mol is not None]
+
+    if not args.quiet:
+        print(
+            f"Building scaffold network from {len(mols)} molecules...",
+            file=sys.stderr,
+        )
+
+    network = build_scaffold_network(mols)
+
+    output_path = Path(args.output)
+    if args.output_format == "json":
+        with open(output_path, "w") as f:
+            json.dump(network, f, indent=2)
+    else:
+        with open(output_path, "w") as f:
+            f.write("scaffold,count,fraction\n")
+            n_mols = network["num_molecules"]
+            for i, node in enumerate(network["nodes"]):
+                count = network["counts"].get(i, 0)
+                frac = round(count / n_mols, 4) if n_mols > 0 else 0
+                node_escaped = node.replace('"', '""')
+                f.write(f'"{node_escaped}",{count},{frac}\n')
+
+    if not args.quiet:
+        print(
+            f"Network: {len(network['nodes'])} scaffolds, "
+            f"{len(network['edges'])} edges. Wrote to {output_path}",
+            file=sys.stderr,
+        )
 
     return 0

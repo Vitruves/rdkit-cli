@@ -123,10 +123,10 @@ def register_parser(subparsers):
     )
     drug_parser.set_defaults(func=run_druglike)
 
-    # filter pains
+    # filter pains / alerts
     pains_parser = filter_subparsers.add_parser(
         "pains",
-        help="Filter out PAINS compounds",
+        help="Filter out PAINS and other structural alerts",
         formatter_class=RdkitHelpFormatter,
     )
     add_common_io_options(pains_parser)
@@ -134,14 +134,48 @@ def register_parser(subparsers):
     pains_parser.add_argument(
         "--keep-pains",
         action="store_true",
-        help="Keep PAINS compounds (inverse filter)",
+        help="Keep alerting compounds (inverse filter)",
     )
     pains_parser.add_argument(
         "--add-pains-type",
         action="store_true",
-        help="Add column with PAINS alert type",
+        help="Add column with alert type",
+    )
+    pains_parser.add_argument(
+        "--catalog",
+        choices=["pains", "pains_a", "pains_b", "pains_c", "brenk", "nih", "zinc", "all"],
+        default="pains",
+        help="Alert catalog to use (default: pains)",
     )
     pains_parser.set_defaults(func=run_pains)
+
+    # filter alerts (alias for pains with clearer name)
+    alerts_parser = filter_subparsers.add_parser(
+        "alerts",
+        help="Filter by structural alerts (PAINS, Brenk, NIH, ZINC)",
+        formatter_class=RdkitHelpFormatter,
+    )
+    add_common_io_options(alerts_parser)
+    add_common_processing_options(alerts_parser)
+    alerts_parser.add_argument(
+        "--keep-matches",
+        action="store_true",
+        dest="keep_pains",
+        help="Keep alerting compounds (inverse filter)",
+    )
+    alerts_parser.add_argument(
+        "--add-alert-type",
+        action="store_true",
+        dest="add_pains_type",
+        help="Add column with alert type",
+    )
+    alerts_parser.add_argument(
+        "--catalog",
+        choices=["pains", "pains_a", "pains_b", "pains_c", "brenk", "nih", "zinc", "all"],
+        default="pains",
+        help="Alert catalog to use (default: pains)",
+    )
+    alerts_parser.set_defaults(func=run_pains)
 
     # filter elements
     elem_parser = filter_subparsers.add_parser(
@@ -298,13 +332,18 @@ def run_druglike(args) -> int:
 
 
 def run_pains(args) -> int:
-    """Run the PAINS filter."""
+    """Run the PAINS / structural alerts filter."""
     # Lazy import
     from rdkit_cli.core.filters import PAINSFilter
 
-    filter_obj = PAINSFilter(
-        exclude=not getattr(args, "keep_pains", False),
-    )
+    try:
+        filter_obj = PAINSFilter(
+            exclude=not getattr(args, "keep_pains", False),
+            catalog_name=getattr(args, "catalog", "pains"),
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
     return _run_filter(args, filter_obj.filter)
 
 

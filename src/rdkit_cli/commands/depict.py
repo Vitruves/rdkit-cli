@@ -274,6 +274,48 @@ def register_parser(subparsers):
     )
     grid_parser.set_defaults(func=run_grid)
 
+    # depict highlight
+    hl_parser = depict_subparsers.add_parser(
+        "highlight",
+        help="Depict with SMARTS-based highlighting",
+        formatter_class=RdkitHelpFormatter,
+    )
+    hl_parser.add_argument(
+        "smiles",
+        metavar="SMILES",
+        help="SMILES string of molecule to depict",
+    )
+    hl_parser.add_argument(
+        "-s", "--smarts",
+        required=True,
+        metavar="PATTERN",
+        help="SMARTS pattern to highlight",
+    )
+    hl_parser.add_argument(
+        "-o", "--output",
+        required=True,
+        metavar="FILE",
+        help="Output image file (SVG or PNG)",
+    )
+    hl_parser.add_argument(
+        "--width",
+        type=int,
+        default=400,
+        help="Image width (default: 400)",
+    )
+    hl_parser.add_argument(
+        "--height",
+        type=int,
+        default=300,
+        help="Image height (default: 300)",
+    )
+    hl_parser.add_argument(
+        "--color",
+        default="1.0,0.0,0.0",
+        help="Highlight color as R,G,B floats (default: 1.0,0.0,0.0)",
+    )
+    hl_parser.set_defaults(func=run_highlight)
+
     # Set default for main parser
     parser.set_defaults(func=lambda args: parser.print_help() or 1)
 
@@ -430,4 +472,73 @@ def run_grid(args) -> int:
     if not args.quiet:
         print(f"Wrote grid image to {output_path}", file=sys.stderr)
 
+    return 0
+
+
+def run_highlight(args) -> int:
+    """Depict molecule with SMARTS-based highlighting."""
+    from rdkit import Chem
+    from rdkit.Chem.Draw import rdMolDraw2D
+
+    mol = Chem.MolFromSmiles(args.smiles)
+    if mol is None:
+        print(f"Error: Invalid SMILES: {args.smiles}", file=sys.stderr)
+        return 1
+
+    pattern = Chem.MolFromSmarts(args.smarts)
+    if pattern is None:
+        print(f"Error: Invalid SMARTS: {args.smarts}", file=sys.stderr)
+        return 1
+
+    # Find matching atoms/bonds
+    matches = mol.GetSubstructMatches(pattern)
+    if not matches:
+        print("Warning: No substructure match found", file=sys.stderr)
+
+    highlight_atoms = []
+    highlight_bonds = []
+    for match in matches:
+        highlight_atoms.extend(match)
+        for i in range(len(match)):
+            for j in range(i + 1, len(match)):
+                bond = mol.GetBondBetweenAtoms(match[i], match[j])
+                if bond is not None:
+                    highlight_bonds.append(bond.GetIdx())
+
+    # Parse color
+    try:
+        rgb = tuple(float(c) for c in args.color.split(","))
+    except (ValueError, TypeError):
+        rgb = (1.0, 0.0, 0.0)
+
+    atom_colors = {a: rgb for a in highlight_atoms}
+    bond_colors = {b: rgb for b in highlight_bonds}
+
+    output_path = Path(args.output)
+    fmt = output_path.suffix.lower().lstrip(".")
+
+    if fmt == "svg":
+        drawer = rdMolDraw2D.MolDraw2DSVG(args.width, args.height)
+    else:
+        drawer = rdMolDraw2D.MolDraw2DCairo(args.width, args.height)
+
+    drawer.DrawMolecule(
+        mol,
+        highlightAtoms=highlight_atoms,
+        highlightBonds=highlight_bonds,
+        highlightAtomColors=atom_colors,
+        highlightBondColors=bond_colors,
+    )
+    drawer.FinishDrawing()
+
+    data = drawer.GetDrawingText()
+    mode = "w" if fmt == "svg" else "wb"
+    with open(output_path, mode) as f:
+        f.write(data)
+
+    print(
+        f"Wrote highlighted image to {output_path} "
+        f"({len(highlight_atoms)} atoms highlighted)",
+        file=sys.stderr,
+    )
     return 0

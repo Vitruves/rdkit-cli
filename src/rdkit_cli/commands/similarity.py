@@ -6,7 +6,11 @@ from pathlib import Path
 from rdkit_cli.cli import RdkitHelpFormatter, add_common_io_options, add_common_processing_options
 
 # Define here to avoid loading core at startup
-SIMILARITY_METRICS = ["tanimoto", "dice", "cosine", "sokal", "russel"]
+SIMILARITY_METRICS = [
+    "tanimoto", "dice", "cosine", "sokal", "russel",
+    "allbit", "asymmetric", "braunblanquet", "kulczynski",
+    "mcconnaughey", "onbit", "rogotgoldberg", "tversky",
+]
 
 
 def register_parser(subparsers):
@@ -77,7 +81,10 @@ def register_parser(subparsers):
     )
     search_parser.add_argument(
         "--fp-type",
-        choices=["morgan", "maccs", "rdkit", "atompair", "torsion"],
+        choices=[
+            "morgan", "maccs", "rdkit", "atompair", "torsion",
+            "pattern", "avalon", "mhfp", "pharmacophore",
+        ],
         default="morgan",
         help="Fingerprint type (default: morgan)",
     )
@@ -90,6 +97,20 @@ def register_parser(subparsers):
         "--add-rank",
         action="store_true",
         help="Add similarity rank column",
+    )
+    search_parser.add_argument(
+        "--tversky-alpha",
+        type=float,
+        default=0.5,
+        metavar="A",
+        help="Tversky alpha parameter (default: 0.5)",
+    )
+    search_parser.add_argument(
+        "--tversky-beta",
+        type=float,
+        default=0.5,
+        metavar="B",
+        help="Tversky beta parameter (default: 0.5)",
     )
     search_parser.set_defaults(func=run_search)
 
@@ -109,7 +130,10 @@ def register_parser(subparsers):
     )
     matrix_parser.add_argument(
         "--fp-type",
-        choices=["morgan", "maccs", "rdkit", "atompair", "torsion"],
+        choices=[
+            "morgan", "maccs", "rdkit", "atompair", "torsion",
+            "pattern", "avalon", "mhfp", "pharmacophore",
+        ],
         default="morgan",
         help="Fingerprint type (default: morgan)",
     )
@@ -135,6 +159,20 @@ def register_parser(subparsers):
         type=int,
         default=4,
         help="Decimal precision (default: 4)",
+    )
+    matrix_parser.add_argument(
+        "--tversky-alpha",
+        type=float,
+        default=0.5,
+        metavar="A",
+        help="Tversky alpha parameter (default: 0.5)",
+    )
+    matrix_parser.add_argument(
+        "--tversky-beta",
+        type=float,
+        default=0.5,
+        metavar="B",
+        help="Tversky beta parameter (default: 0.5)",
     )
     matrix_parser.set_defaults(func=run_matrix)
 
@@ -173,7 +211,10 @@ def register_parser(subparsers):
     )
     cluster_parser.add_argument(
         "--fp-type",
-        choices=["morgan", "maccs", "rdkit", "atompair", "torsion"],
+        choices=[
+            "morgan", "maccs", "rdkit", "atompair", "torsion",
+            "pattern", "avalon", "mhfp", "pharmacophore",
+        ],
         default="morgan",
         help="Fingerprint type (default: morgan)",
     )
@@ -189,6 +230,49 @@ def register_parser(subparsers):
         help="Mark cluster centroids",
     )
     cluster_parser.set_defaults(func=run_cluster)
+
+    # similarity shape
+    shape_parser = sim_subparsers.add_parser(
+        "shape",
+        help="Compare molecules by 3D shape similarity",
+        formatter_class=RdkitHelpFormatter,
+    )
+    add_common_io_options(shape_parser)
+    add_common_processing_options(shape_parser)
+    shape_parser.add_argument(
+        "-r", "--reference",
+        required=True,
+        metavar="FILE",
+        help="Reference molecule file with 3D coords (SDF, MOL, PDB)",
+    )
+    shape_parser.add_argument(
+        "-t", "--threshold",
+        type=float,
+        default=0.5,
+        metavar="T",
+        help="Minimum shape similarity threshold (default: 0.5)",
+    )
+    shape_parser.add_argument(
+        "-m", "--metric",
+        choices=["tanimoto", "protrude", "tversky"],
+        default="tanimoto",
+        help="Shape similarity metric (default: tanimoto)",
+    )
+    shape_parser.add_argument(
+        "--tversky-alpha",
+        type=float,
+        default=0.5,
+        metavar="A",
+        help="Tversky alpha parameter (default: 0.5)",
+    )
+    shape_parser.add_argument(
+        "--tversky-beta",
+        type=float,
+        default=0.5,
+        metavar="B",
+        help="Tversky beta parameter (default: 0.5)",
+    )
+    shape_parser.set_defaults(func=run_shape)
 
     # Set default for main parser
     parser.set_defaults(func=lambda args: parser.print_help() or 1)
@@ -208,6 +292,8 @@ def run_search(args) -> int:
             metric=SimilarityMetric(args.metric),
             radius=args.radius,
             n_bits=args.bits,
+            tversky_alpha=getattr(args, "tversky_alpha", 0.5),
+            tversky_beta=getattr(args, "tversky_beta", 0.5),
         )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)
@@ -281,6 +367,8 @@ def run_matrix(args) -> int:
     matrix = compute_similarity_matrix(
         mols,
         metric=SimilarityMetric(args.metric),
+        tversky_alpha=getattr(args, "tversky_alpha", 0.5),
+        tversky_beta=getattr(args, "tversky_beta", 0.5),
     )
 
     # Write output
@@ -353,6 +441,57 @@ def run_cluster(args) -> int:
         print(
             f"Found {len(clusters)} clusters from {len(mols)} molecules. "
             f"Wrote to {output_path}",
+            file=sys.stderr,
+        )
+
+    return 0
+
+
+def run_shape(args) -> int:
+    """Run 3D shape similarity search."""
+    from rdkit_cli.core.similarity import ShapeSimilaritySearcher
+    from rdkit_cli.io import create_reader, create_writer
+    from rdkit_cli.parallel.batch import process_molecules
+
+    try:
+        searcher = ShapeSimilaritySearcher(
+            reference_file=args.reference,
+            threshold=args.threshold,
+            metric=args.metric,
+            tversky_alpha=getattr(args, "tversky_alpha", 0.5),
+            tversky_beta=getattr(args, "tversky_beta", 0.5),
+        )
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"Error: Input file not found: {input_path}", file=sys.stderr)
+        return 1
+
+    reader = create_reader(
+        input_path,
+        smiles_column=args.smiles_column,
+        name_column=args.name_column,
+        has_header=not args.no_header,
+    )
+    output_path = Path(args.output)
+    writer = create_writer(output_path)
+
+    with reader, writer:
+        result = process_molecules(
+            reader=reader,
+            writer=writer,
+            processor=searcher.search,
+            n_workers=1,  # Shape comparison not picklable
+            quiet=args.quiet,
+        )
+
+    if not args.quiet:
+        print(
+            f"Found {result.successful}/{result.total_processed} "
+            f"molecules above threshold in {result.elapsed_time:.1f}s",
             file=sys.stderr,
         )
 

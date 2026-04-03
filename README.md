@@ -7,7 +7,7 @@
 
 A high-performance CLI for cheminformatics workflows, powered by native RDKit (C++ under the hood).
 
-**29 commands** | **5 I/O formats** (CSV, TSV, SMI, SDF, Parquet) | **multi-core parallel processing** | **~80ms startup**
+**32 commands** | **5 I/O formats** (CSV, TSV, SMI, SDF, Parquet) | **multi-core parallel processing** | **~80ms startup**
 
 ## Installation
 
@@ -47,6 +47,7 @@ Commands:
     depict         Generate molecular depictions (SVG/PNG)
     descriptors    Compute molecular descriptors
     diversity      Analyze and select diverse molecules
+    energy         Force field energy calculations
     enumerate      Enumerate stereoisomers and tautomers
     filter         Filter by substructure, properties, drug-likeness, PAINS
     fingerprints   Compute fingerprints (Morgan, MACCS, RDKit, AtomPair, Torsion)
@@ -55,6 +56,7 @@ Commands:
     mcs            Find Maximum Common Substructure
     merge          Merge multiple molecule files
     mmp            Matched Molecular Pairs analysis
+    pharmacophore  Pharmacophore feature analysis
     props          Property column operations (add, rename, drop, keep)
     protonate      Enumerate protonation states
     reactions      Apply SMIRKS transformations and enumerate products
@@ -68,6 +70,7 @@ Commands:
     split          Split files into smaller chunks
     standardize    Standardize and canonicalize molecules
     stats          Calculate dataset statistics
+    stereo         Analyze and manipulate stereochemistry
     validate       Validate molecular structures
 
 Use 'rdkit-cli <command> --help' for command-specific options.

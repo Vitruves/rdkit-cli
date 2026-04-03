@@ -100,6 +100,48 @@ def register_parser(subparsers):
     )
     analyze_parser.set_defaults(func=run_analyze)
 
+    # fragment brics-build
+    build_parser = frag_subparsers.add_parser(
+        "brics-build",
+        help="Recombine BRICS fragments into new molecules",
+        formatter_class=RdkitHelpFormatter,
+    )
+    build_parser.add_argument(
+        "-i", "--input",
+        required=True,
+        metavar="FILE",
+        help="Input file with BRICS fragment SMILES",
+    )
+    build_parser.add_argument(
+        "-o", "--output",
+        required=True,
+        metavar="FILE",
+        help="Output file for generated molecules",
+    )
+    build_parser.add_argument(
+        "--fragment-column",
+        default="fragment_smiles",
+        help="Name of fragment column (default: fragment_smiles)",
+    )
+    build_parser.add_argument(
+        "--max-molecules",
+        type=int,
+        default=1000,
+        metavar="N",
+        help="Maximum molecules to generate (default: 1000)",
+    )
+    build_parser.add_argument(
+        "--no-header",
+        action="store_true",
+        help="Input file has no header row",
+    )
+    build_parser.add_argument(
+        "-q", "--quiet",
+        action="store_true",
+        help="Suppress progress output",
+    )
+    build_parser.set_defaults(func=run_brics_build)
+
     # Set default for main parser
     parser.set_defaults(func=lambda args: parser.print_help() or 1)
 
@@ -279,6 +321,66 @@ def run_analyze(args) -> int:
     else:
         print(output_text)
 
-    print(f"\nTotal fragments: {len(fragments)}, Unique: {len(set(fragments))}", file=sys.stderr)
+    print(
+        f"\nTotal fragments: {len(fragments)}, "
+        f"Unique: {len(set(fragments))}",
+        file=sys.stderr,
+    )
+
+    return 0
+
+
+def run_brics_build(args) -> int:
+    """Run BRICS recombination."""
+    import pandas as pd
+    from rdkit_cli.core.fragment import brics_build
+    from rdkit_cli.io import create_writer
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"Error: Input file not found: {input_path}", file=sys.stderr)
+        return 1
+
+    header = 0 if not args.no_header else None
+    df = pd.read_csv(input_path, header=header)
+
+    if args.no_header:
+        frag_col = df.columns[0]
+    else:
+        frag_col = args.fragment_column
+
+    if frag_col not in df.columns:
+        print(
+            f"Error: Fragment column '{frag_col}' not found",
+            file=sys.stderr,
+        )
+        return 1
+
+    fragments = df[frag_col].dropna().unique().tolist()
+
+    if not args.quiet:
+        print(
+            f"Building molecules from {len(fragments)} "
+            f"unique fragments...",
+            file=sys.stderr,
+        )
+
+    products = brics_build(
+        fragments,
+        max_molecules=args.max_molecules,
+    )
+
+    output_path = Path(args.output)
+    writer = create_writer(output_path)
+    with writer:
+        for smi in products:
+            writer.write_row({"smiles": smi})
+
+    if not args.quiet:
+        print(
+            f"Generated {len(products)} molecules. "
+            f"Wrote to {output_path}",
+            file=sys.stderr,
+        )
 
     return 0

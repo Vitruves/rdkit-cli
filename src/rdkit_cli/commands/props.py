@@ -178,6 +178,68 @@ def register_parser(subparsers):
     )
     list_parser.set_defaults(func=run_list)
 
+    # props charges
+    charges_parser = props_subparsers.add_parser(
+        "charges",
+        help="Compute Gasteiger partial charges",
+        formatter_class=RdkitHelpFormatter,
+    )
+    charges_parser.add_argument(
+        "-i", "--input",
+        required=True,
+        metavar="FILE",
+        help="Input file",
+    )
+    charges_parser.add_argument(
+        "-o", "--output",
+        required=True,
+        metavar="FILE",
+        help="Output file",
+    )
+    charges_parser.add_argument(
+        "--smiles-column",
+        default="smiles",
+        metavar="COL",
+        help="Name of SMILES column (default: smiles)",
+    )
+    charges_parser.add_argument(
+        "--no-header",
+        action="store_true",
+        help="Input file has no header row",
+    )
+    charges_parser.set_defaults(func=run_charges)
+
+    # props crippen
+    crippen_parser = props_subparsers.add_parser(
+        "crippen",
+        help="Compute Crippen atom LogP/MR contributions",
+        formatter_class=RdkitHelpFormatter,
+    )
+    crippen_parser.add_argument(
+        "-i", "--input",
+        required=True,
+        metavar="FILE",
+        help="Input file",
+    )
+    crippen_parser.add_argument(
+        "-o", "--output",
+        required=True,
+        metavar="FILE",
+        help="Output file",
+    )
+    crippen_parser.add_argument(
+        "--smiles-column",
+        default="smiles",
+        metavar="COL",
+        help="Name of SMILES column (default: smiles)",
+    )
+    crippen_parser.add_argument(
+        "--no-header",
+        action="store_true",
+        help="Input file has no header row",
+    )
+    crippen_parser.set_defaults(func=run_crippen)
+
     # Set default for main parser
     parser.set_defaults(func=lambda args: parser.print_help() or 1)
 
@@ -306,4 +368,105 @@ def run_list(args) -> int:
         print(f"  {i+1}. {col}")
 
     print(f"\nTotal: {len(df.columns)} columns", file=sys.stderr)
+    return 0
+
+
+def run_charges(args) -> int:
+    """Compute Gasteiger partial charges."""
+    from rdkit import Chem
+    from rdkit.Chem import rdPartialCharges
+    from rdkit_cli.io import create_reader, create_writer
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"Error: Input file not found: {input_path}", file=sys.stderr)
+        return 1
+
+    reader = create_reader(
+        input_path,
+        smiles_column=args.smiles_column,
+        has_header=not args.no_header,
+    )
+
+    output_path = Path(args.output)
+    writer = create_writer(output_path)
+
+    count = 0
+    with writer:
+        for record in reader:
+            if record.mol is None:
+                continue
+            mol = Chem.AddHs(record.mol)
+            rdPartialCharges.ComputeGasteigerCharges(mol)
+            charges = []
+            for atom in mol.GetAtoms():
+                try:
+                    c = atom.GetDoubleProp("_GasteigerCharge")
+                    charges.append(round(c, 6))
+                except Exception:
+                    charges.append(None)
+
+            row = {"smiles": record.smiles}
+            if record.name:
+                row["name"] = record.name
+            row["gasteiger_charges"] = str(charges)
+            row["min_charge"] = min(
+                (c for c in charges if c is not None), default=None,
+            )
+            row["max_charge"] = max(
+                (c for c in charges if c is not None), default=None,
+            )
+            writer.write_row(row)
+            count += 1
+
+    print(
+        f"Computed Gasteiger charges for {count} molecules",
+        file=sys.stderr,
+    )
+    return 0
+
+
+def run_crippen(args) -> int:
+    """Compute Crippen atom LogP/MR contributions."""
+    from rdkit import Chem
+    from rdkit.Chem import Crippen
+    from rdkit_cli.io import create_reader, create_writer
+
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"Error: Input file not found: {input_path}", file=sys.stderr)
+        return 1
+
+    reader = create_reader(
+        input_path,
+        smiles_column=args.smiles_column,
+        has_header=not args.no_header,
+    )
+
+    output_path = Path(args.output)
+    writer = create_writer(output_path)
+
+    count = 0
+    with writer:
+        for record in reader:
+            if record.mol is None:
+                continue
+            contribs = Crippen._GetAtomContribs(record.mol)
+            logp_contribs = [round(c[0], 4) for c in contribs]
+            mr_contribs = [round(c[1], 4) for c in contribs]
+
+            row = {"smiles": record.smiles}
+            if record.name:
+                row["name"] = record.name
+            row["logp_contribs"] = str(logp_contribs)
+            row["mr_contribs"] = str(mr_contribs)
+            row["crippen_logp"] = round(sum(logp_contribs), 4)
+            row["crippen_mr"] = round(sum(mr_contribs), 4)
+            writer.write_row(row)
+            count += 1
+
+    print(
+        f"Computed Crippen contributions for {count} molecules",
+        file=sys.stderr,
+    )
     return 0

@@ -263,23 +263,52 @@ class DruglikeFilter:
         return result
 
 
+ALERT_CATALOGS = {
+    "pains": FilterCatalog.FilterCatalogParams.FilterCatalogs.PAINS,
+    "pains_a": FilterCatalog.FilterCatalogParams.FilterCatalogs.PAINS_A,
+    "pains_b": FilterCatalog.FilterCatalogParams.FilterCatalogs.PAINS_B,
+    "pains_c": FilterCatalog.FilterCatalogParams.FilterCatalogs.PAINS_C,
+    "brenk": FilterCatalog.FilterCatalogParams.FilterCatalogs.BRENK,
+    "nih": FilterCatalog.FilterCatalogParams.FilterCatalogs.NIH,
+    "zinc": FilterCatalog.FilterCatalogParams.FilterCatalogs.ZINC,
+}
+
+
 class PAINSFilter:
-    """Filter molecules for PAINS (Pan-Assay Interference Compounds)."""
+    """Filter molecules using structural alert catalogs (PAINS, Brenk, NIH, ZINC)."""
 
     def __init__(
         self,
         exclude: bool = True,
         include_smiles: bool = True,
         include_name: bool = True,
+        catalog_name: str = "pains",
     ):
-        """Initialize PAINS filter."""
+        """
+        Initialize structural alert filter.
+
+        Args:
+            exclude: If True, exclude matching molecules
+            include_smiles: Include SMILES in output
+            include_name: Include molecule name in output
+            catalog_name: Alert catalog to use (pains, brenk, nih, zinc, all)
+        """
         self.exclude = exclude
         self.include_smiles = include_smiles
         self.include_name = include_name
 
-        # Initialize PAINS catalog
+        # Initialize filter catalog
         params = FilterCatalog.FilterCatalogParams()
-        params.AddCatalog(FilterCatalog.FilterCatalogParams.FilterCatalogs.PAINS)
+        if catalog_name == "all":
+            for cat in ALERT_CATALOGS.values():
+                params.AddCatalog(cat)
+        elif catalog_name in ALERT_CATALOGS:
+            params.AddCatalog(ALERT_CATALOGS[catalog_name])
+        else:
+            raise ValueError(
+                f"Unknown catalog: {catalog_name}. "
+                f"Available: {', '.join(list(ALERT_CATALOGS.keys()) + ['all'])}"
+            )
         self.catalog = FilterCatalog.FilterCatalog(params)
 
     def filter(self, record: MoleculeRecord) -> Optional[dict[str, Any]]:

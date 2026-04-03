@@ -6,7 +6,10 @@ from pathlib import Path
 from rdkit_cli.cli import RdkitHelpFormatter, add_common_io_options, add_common_processing_options
 
 # Fingerprint types defined here to avoid importing core at startup
-FINGERPRINT_TYPES = ["morgan", "maccs", "rdkit", "atompair", "torsion", "pattern"]
+FINGERPRINT_TYPES = [
+    "morgan", "maccs", "rdkit", "atompair", "torsion",
+    "pattern", "avalon", "mhfp", "pharmacophore",
+]
 
 
 def register_parser(subparsers):

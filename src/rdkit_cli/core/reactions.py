@@ -157,3 +157,81 @@ class ReactionEnumerator:
                 continue
 
         return results
+
+
+def compute_reaction_fingerprint(
+    reaction_smarts: str,
+    fp_type: str = "difference",
+) -> Any:
+    """
+    Compute fingerprint for a reaction.
+
+    Args:
+        reaction_smarts: Reaction SMARTS
+        fp_type: 'difference' or 'structural'
+
+    Returns:
+        Fingerprint object
+    """
+    rxn = AllChem.ReactionFromSmarts(reaction_smarts)
+    if rxn is None:
+        raise ValueError(f"Invalid reaction SMARTS: {reaction_smarts}")
+
+    if fp_type == "structural":
+        return rdChemReactions.CreateStructuralFingerprintForReaction(rxn)
+    else:
+        return rdChemReactions.CreateDifferenceFingerprintForReaction(rxn)
+
+
+def get_atom_mapping(reaction_smarts: str) -> dict[str, Any]:
+    """
+    Extract atom-atom mapping from a reaction SMARTS.
+
+    Args:
+        reaction_smarts: Reaction SMARTS with atom mapping
+
+    Returns:
+        Dictionary with mapping info
+    """
+    rxn = AllChem.ReactionFromSmarts(reaction_smarts)
+    if rxn is None:
+        raise ValueError(f"Invalid reaction SMARTS: {reaction_smarts}")
+
+    has_mapping = rdChemReactions.HasReactionAtomMapping(rxn)
+
+    # Extract mapping from reactants
+    reactant_maps = []
+    for i in range(rxn.GetNumReactantTemplates()):
+        tmpl = rxn.GetReactantTemplate(i)
+        atoms = {}
+        for atom in tmpl.GetAtoms():
+            map_num = atom.GetAtomMapNum()
+            if map_num > 0:
+                atoms[map_num] = {
+                    "idx": atom.GetIdx(),
+                    "symbol": atom.GetSymbol(),
+                }
+        reactant_maps.append(atoms)
+
+    # Extract mapping from products
+    product_maps = []
+    for i in range(rxn.GetNumProductTemplates()):
+        tmpl = rxn.GetProductTemplate(i)
+        atoms = {}
+        for atom in tmpl.GetAtoms():
+            map_num = atom.GetAtomMapNum()
+            if map_num > 0:
+                atoms[map_num] = {
+                    "idx": atom.GetIdx(),
+                    "symbol": atom.GetSymbol(),
+                }
+        product_maps.append(atoms)
+
+    return {
+        "has_mapping": has_mapping,
+        "num_reactants": rxn.GetNumReactantTemplates(),
+        "num_products": rxn.GetNumProductTemplates(),
+        "reactant_maps": reactant_maps,
+        "product_maps": product_maps,
+        "reaction_smarts": reaction_smarts,
+    }

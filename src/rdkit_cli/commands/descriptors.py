@@ -17,6 +17,8 @@ DESCRIPTOR_CATEGORIES = [
     "electronic",
     "geometric",
     "molecular",
+    "mqn",
+    "3d",
 ]
 
 
@@ -91,6 +93,17 @@ def register_parser(subparsers):
         help="Compute drug-likeness descriptors",
     )
     desc_group.add_argument(
+        "--mqn",
+        action="store_true",
+        help="Compute 42 Molecular Quantum Numbers",
+    )
+    desc_group.add_argument(
+        "--3d",
+        action="store_true",
+        dest="compute_3d_set",
+        help="Compute 3D shape descriptors (PMI, NPR, Asphericity, etc.)",
+    )
+    desc_group.add_argument(
         "--category",
         choices=DESCRIPTOR_CATEGORIES,
         dest="compute_category",
@@ -117,10 +130,9 @@ def register_parser(subparsers):
         help="Value to use for failed calculations (default: NaN)",
     )
     compute_parser.add_argument(
-        "--3d",
+        "--generate-conformers",
         action="store_true",
-        dest="compute_3d",
-        help="Include 3D descriptors (requires 3D coordinates)",
+        help="Auto-generate 3D coordinates for 3D descriptors",
     )
     compute_parser.add_argument(
         "--no-smiles",
@@ -209,6 +221,8 @@ def run_compute(args) -> int:
         COMMON_DESCRIPTORS,
         LIPINSKI_DESCRIPTORS,
         DRUGLIKE_DESCRIPTORS,
+        MQN_DESCRIPTORS,
+        THREE_D_DESCRIPTORS,
     )
     from rdkit_cli.io import create_reader, create_writer
     from rdkit_cli.parallel.batch import process_molecules
@@ -224,6 +238,10 @@ def run_compute(args) -> int:
         descriptor_names = LIPINSKI_DESCRIPTORS
     elif args.druglike:
         descriptor_names = DRUGLIKE_DESCRIPTORS
+    elif args.mqn:
+        descriptor_names = MQN_DESCRIPTORS
+    elif args.compute_3d_set:
+        descriptor_names = THREE_D_DESCRIPTORS
     elif args.compute_category:
         descs = list_descriptors(category=args.compute_category)
         descriptor_names = [d.name for d in descs]
@@ -249,6 +267,7 @@ def run_compute(args) -> int:
             include_name=not args.no_name,
             precision=args.precision,
             error_value=args.error_value,
+            generate_conformers=getattr(args, "generate_conformers", False),
         )
     except ValueError as e:
         print(f"Error: {e}", file=sys.stderr)

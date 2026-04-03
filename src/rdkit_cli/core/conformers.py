@@ -195,3 +195,149 @@ class ConformerOptimizer:
 
         except Exception:
             return None
+
+
+class TorsionScanner:
+    """Scan torsion angles and compute energy profiles."""
+
+    def __init__(
+        self,
+        atom_indices: tuple[int, int, int, int],
+        start_angle: float = -180.0,
+        end_angle: float = 180.0,
+        step: float = 10.0,
+        force_field: str = "mmff",
+    ):
+        from rdkit.Chem import rdMolTransforms
+        self.atom_indices = atom_indices
+        self.start_angle = start_angle
+        self.end_angle = end_angle
+        self.step = step
+        self.force_field = force_field.lower()
+        self._rdMolTransforms = rdMolTransforms
+
+    def scan(self, record: MoleculeRecord):
+        if record.mol is None:
+            return None
+
+        try:
+            mol = Chem.AddHs(record.mol)
+
+            # Generate 3D if needed
+            if mol.GetNumConformers() == 0:
+                AllChem.EmbedMolecule(mol, rdDistGeom.ETKDGv3())
+                AllChem.MMFFOptimizeMolecule(mol)
+
+            if mol.GetNumConformers() == 0:
+                return None
+
+            i, j, k, l = self.atom_indices
+            conf = mol.GetConformer()
+
+            angles = []
+            energies = []
+            angle = self.start_angle
+            while angle <= self.end_angle:
+                self._rdMolTransforms.SetDihedralDeg(
+                    conf, i, j, k, l, angle,
+                )
+                # Compute energy at this angle
+                if self.force_field == "mmff":
+                    props = AllChem.MMFFGetMoleculeProperties(mol)
+                    if props is None:
+                        return None
+                    ff = AllChem.MMFFGetMoleculeForceField(mol, props)
+                else:
+                    ff = AllChem.UFFGetMoleculeForceField(mol)
+
+                if ff is None:
+                    return None
+
+                energy = ff.CalcEnergy()
+                angles.append(round(angle, 1))
+                energies.append(round(energy, 4))
+                angle += self.step
+
+            min_energy = min(energies)
+            min_angle = angles[energies.index(min_energy)]
+
+            result = {
+                "smiles": record.smiles,
+                "angles": str(angles),
+                "energies": str(energies),
+                "min_angle": min_angle,
+                "min_energy": min_energy,
+                "barrier": round(max(energies) - min_energy, 4),
+            }
+            if record.name:
+                result["name"] = record.name
+            return result
+        except Exception:
+            return None
+
+
+class ConstrainedEmbedder:
+    """Embed molecules constrained to a reference template."""
+
+    def __init__(
+        self,
+        reference_file: str,
+        force_field: str = "mmff",
+        random_seed: int = 42,
+    ):
+        from rdkit.Chem import rdmolfiles
+
+        self.force_field = force_field.lower()
+        self.random_seed = random_seed
+
+        # Load reference molecule
+        try:
+            ext = reference_file.rsplit(".", 1)[-1].lower()
+            ref_mol = None
+            if ext in ("sdf", "mol"):
+                suppl = rdmolfiles.SDMolSupplier(
+                    reference_file, removeHs=True,
+                )
+                ref_mol = next(iter(suppl), None)
+            elif ext == "pdb":
+                ref_mol = rdmolfiles.MolFromPDBFile(
+                    reference_file, removeHs=True,
+                )
+        except OSError:
+            ref_mol = None
+
+        if ref_mol is None or ref_mol.GetNumConformers() == 0:
+            raise ValueError(
+                f"Cannot load 3D reference from {reference_file}"
+            )
+        self.ref_mol = ref_mol
+
+    def embed(self, record: MoleculeRecord):
+        if record.mol is None:
+            return None
+
+        try:
+            mol = Chem.AddHs(record.mol)
+            AllChem.ConstrainedEmbed(
+                mol, self.ref_mol,
+                randomseed=self.random_seed,
+            )
+
+            if mol.GetNumConformers() == 0:
+                return None
+
+            if self.force_field == "mmff":
+                AllChem.MMFFOptimizeMolecule(mol)
+            else:
+                AllChem.UFFOptimizeMolecule(mol)
+
+            result = {
+                "smiles": record.smiles,
+                "mol": mol,
+            }
+            if record.name:
+                result["name"] = record.name
+            return result
+
+        except Exception:
+            return None

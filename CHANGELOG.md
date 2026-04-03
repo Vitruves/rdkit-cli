@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-04-03
+
+### Added
+
+- **stereo**: New command for stereochemistry analysis — CIP label assignment (R/S, E/Z), stereocenter perception, enhanced stereo group inspection, and stereo cleanup/canonicalization
+- **energy**: New command for force field energy calculations — single-point MMFF/UFF energy and structure minimization with convergence reporting
+- **pharmacophore**: New command for pharmacophore feature perception (Donor, Acceptor, Aromatic, etc.) and 2D pharmacophore fingerprint similarity search
+- **fingerprints**: Added Avalon, MHFP (MinHash), and 2D pharmacophore (Gobbi) fingerprint types
+- **descriptors**: Added 42 Molecular Quantum Numbers (MQN) and 10 3D shape descriptors (PMI, NPR, Asphericity, Eccentricity, SpherocityIndex, PBF); new `--mqn`, `--3d`, and `--generate-conformers` flags
+- **similarity**: Added 8 metrics (AllBit, Asymmetric, BraunBlanquet, Kulczynski, McConnaughey, OnBit, RogotGoldberg, Tversky with alpha/beta); new `shape` subcommand for 3D shape similarity (Tanimoto, Protrude, Tversky)
+- **filter**: Expanded structural alert catalogs — `--catalog` option supports PAINS, PAINS_A/B/C, Brenk, NIH, ZINC, and all combined; added `alerts` subcommand as alias
+- **conformers**: Added `constrained` subcommand for template-constrained 3D embedding and `torsion` subcommand for dihedral angle scanning with energy profiles
+- **reactions**: Added `map` subcommand for atom-atom mapping inspection (text/JSON) and `fingerprint` subcommand for reaction difference/structural fingerprints
+- **scaffold**: Added `network` subcommand for scaffold network construction (CSV/JSON output) using rdScaffoldNetwork
+- **props**: Added `charges` subcommand for Gasteiger partial charges and `crippen` subcommand for per-atom LogP/MR contributions
+- **fragment**: Added `brics-build` subcommand for recombining BRICS fragments into new molecules
+- **depict**: Added `highlight` subcommand for SMARTS-based atom/bond highlighting with custom RGB colors
+
+### Changed
+
+- Total command count increased from 29 to 32 (stereo, energy, pharmacophore)
+- Total fingerprint types increased from 6 to 9
+- Total descriptor count increased from ~133 to ~185
+- Similarity metrics increased from 5 to 13
+
 ## [0.3.1] - 2026-03-14
 
 ### Changed
